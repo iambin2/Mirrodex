@@ -1,0 +1,17 @@
+# This PC's settings and device profiles (they contain the phone serial number)
+mirrodex.cfg
+mirrodex.cfg.bak
+mirrodex.regression.cfg
+preferences.cfg
+language.cfg
+current-context.cfg
+refresh-recovery.cfg
+refresh-repair.cfg
+profiles/
+diagnostics/
+# Local backups and release output
+backup-*/
+dist/
+# Screenshots rendered by tests
+tests/*.png
+*.tmp
