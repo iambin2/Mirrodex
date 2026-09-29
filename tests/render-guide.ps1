@@ -4,8 +4,10 @@ try {
   $form.Show(); [Windows.Forms.Application]::DoEvents(); $form.PerformLayout()
   $bitmap=New-Object Drawing.Bitmap($form.Width,$form.Height)
   try { $form.DrawToBitmap($bitmap, (New-Object Drawing.Rectangle(0,0,$form.Width,$form.Height))); $bitmap.Save((Join-Path $PSScriptRoot 'guide-preview.png')) } finally { $bitmap.Dispose() }
-  $buttons=@($form.Controls[0].Controls | Where-Object { $_ -is [Windows.Forms.Button] })
+  # Answers are command links in the body; Close sits in the footer row.
+  $buttons=@($form.MxLayout.Controls | ForEach-Object { if ($_.PSObject.Properties['MxFooter']) { $_.Controls } else { $_ } } | Where-Object { $_ -is [Windows.Forms.Button] })
   if ($buttons.Count -ne 7) { throw 'Missing choices' }
+  if ($form.AcceptButton -ne $buttons[0] -or $buttons[0].Variant -ne 'choice-primary' -or $form.CancelButton -ne $buttons[6]) { throw 'Recommended answer or Close misplaced' }
   $buttons[2].PerformClick()
   if ($form.Tag -ne 'blur') { throw 'Choice dispatch failed' }
   Write-Output 'GUI render and button dispatch passed'

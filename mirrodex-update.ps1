@@ -77,7 +77,7 @@ function Invoke-StartupUpdateCheck {
   $text="Mirrodex $($release.Version)을 설치할 수 있습니다. 지금 버전은 $($script:AppVersion)입니다.`n설정, 녹화 파일, 스크린샷은 그대로 남습니다."
   if ($notes) { $text+="`n`n$notes" }
   try {
-    $pick=Show-GuideChoice '새 버전이 있습니다' $text @(@{Key='update';Label='지금 업데이트하기'},@{Key='later';Label='내일 다시 알림'},@{Key='skip';Label='이 버전 건너뛰기'})
+    $pick=Show-GuideChoice '새 버전이 있습니다' $text @(@{Key='update';Label='지금 업데이트하기'},@{Key='later';Label='내일 다시 알림'},@{Key='skip';Label='이 버전 건너뛰기';Variant='quiet'})
   } catch [OperationCanceledException] { return $false }
   if ($pick -eq 'skip') { Set-UiPreference 'skipversion' ([string]$release.Version); return $false }
   if ($pick -ne 'update') { return $false }

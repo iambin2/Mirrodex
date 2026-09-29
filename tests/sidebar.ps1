@@ -3,19 +3,33 @@
 $testRoot=Join-Path ([IO.Path]::GetTempPath()) ('mirrodex-sidebar-'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($testRoot)
 $Cfg=Join-Path $testRoot 'mirrodex.cfg'; $Root=$testRoot
+$script:PreferencesFile=Join-Path $testRoot 'preferences.cfg'; $script:UiPreferences=$null
 $c=@{codec='h265';encoder='vendor.hevc';size='2340';rate='8M';fps='60';buffer='50';arr='1';serial='TEST';audio='output';audiobuffer='50';requireaudio='0'}
-$device=@{Long=2340;Encoders="--video-codec=h264 --video-encoder=vendor.avc (hw)`n--video-codec=h265 --video-encoder=vendor.hevc (hw)"}
+$device=@{Model='SM-S948N';Long=2340;Encoders="--video-codec=h264 --video-encoder=vendor.avc (hw)`n--video-codec=h265 --video-encoder=vendor.hevc (hw)"}
 $script:checks=0
 function Assert ($Value,$Message) { if (-not $Value) { throw $Message }; $script:checks++ }
 $form=$null
 try {
   Write-Pairs $Cfg $c; Save-Profile 'good' $c
   $before=(Get-FileHash $Cfg).Hash
-  $script:SidebarExpanded=$false
-  $folded=New-Sidebar $c $device; $folded.Show(); [Windows.Forms.Application]::DoEvents()
-  $fs=$folded.Tag
-  Assert (-not $fs.Settings.Visible -and $fs.Record.Visible -and $fs.Screenshot.Visible) 'quick actions visible, engine settings folded by default'
-  Assert (-not $folded.Controls[0].VerticalScroll.Visible) 'folded menu fits without scrolling'
+  # Both languages: the folded menu fits a 1200px screen at 125% and no key label is cut off (English runs longest).
+  foreach ($lang in 'ko','en') {
+    Set-UiLanguage $lang; $script:SidebarExpanded=$false
+    $folded=New-Sidebar $c $device; $folded.Show(); [Windows.Forms.Application]::DoEvents()
+    $g=[MxTheme]::Measure(); $px=$g.DpiX/96
+    $fs=$folded.Tag
+    Assert (-not $fs.Settings.Visible -and $fs.Record.Visible -and $fs.Screenshot.Visible) "quick actions visible, engine settings folded by default ($lang)"
+    Assert (-not $folded.MxLayout.Parent.VerticalScroll.Visible -and $folded.MxLayout.Bottom -le $folded.MxLayout.Parent.ClientSize.Height) "folded menu fits without scrolling ($lang)"
+    $cut=@(foreach ($key in @($fs.Record,$fs.Screenshot,$fs.OnTop,$fs.Lock)) {
+      $room=$key.Width-$(if ($key -is [MxToggle] -or $key.Lamp -ge 0 -or $key.Reconnects) {66} else {50})*$px
+      $parts=[MxPaint]::Split($key.Text)
+      if ($g.MeasureString($parts[0],$key.Font,[Drawing.PointF]::Empty,[Drawing.StringFormat]::GenericTypographic).Width -gt $room -or
+          $g.MeasureString($parts[1],$key.DetailFont,[Drawing.PointF]::Empty,[Drawing.StringFormat]::GenericTypographic).Width -gt $room) { $key.Text }
+    })
+    Assert ($cut.Count -eq 0) "key labels fit without truncation ($lang): $($cut -join ', ')"
+    $g.Dispose()
+    if ($lang -eq 'ko') { $folded.Dispose() }
+  }
   $fs.Expand.PerformClick(); [Windows.Forms.Application]::DoEvents()
   Assert ($fs.Settings.Visible -and $script:SidebarExpanded -and $folded.ClientSize.Height -gt 300) 'expanding shows settings and remembers it for the next reconnection'
   $env:ADB=Join-Path $testRoot 'missing-adb.exe'
@@ -28,10 +42,13 @@ try {
   try { $form.DrawToBitmap($bitmap,(New-Object Drawing.Rectangle(0,0,$form.Width,$form.Height))); $bitmap.Save((Join-Path $PSScriptRoot 'sidebar-preview.png')) } finally { $bitmap.Dispose() }
   $state=$form.Tag
   Assert ($state.Fields.size.SelectedItem -eq '2340' -and $state.Fields.fps.SelectedItem -eq '60') 'load known good without preset downgrade'
+  Assert ($state.SavedChip.Text -eq (T '저장된 설정') -and $state.DraftCount -eq 0 -and $state.Apply.Variant -eq 'secondary') 'running settings read as saved; nothing pending, so Apply only reconnects'
   $state.Fields.size.SelectedItem='1920'
   Assert ((Get-FileHash $Cfg).Hash -eq $before -and -not $state.Request) 'draft selection does not save or restart'
+  Assert ($state.DraftCount -eq 1 -and $state.Fields.size.Changed -and -not $state.Fields.fps.Changed -and $state.Apply.Variant -eq 'primary') 'a picked value is marked and counted, and Apply becomes the primary action'
   $state.Lock.Checked=$true
   Assert (-not $state.Apply.Enabled -and -not $state.Restore.Enabled) 'broadcast lock disables reconnect actions'
+  Assert ($state.LockChip.Visible -and $state.Apply.Locked -and $state.Source.Locked -and -not $state.Screenshot.Locked) 'the lock is visible as a chip and on every blocked action'
   $state.Apply.PerformClick(); $state.Record.PerformClick()
   Assert (-not $state.Request -and -not $state.Record.Enabled -and -not $state.Guide.Enabled -and $state.Screenshot.Enabled) 'lock blocks reconnecting actions but not screenshots'
   $state.Lock.Checked=$false; $state.Apply.PerformClick()
@@ -55,6 +72,13 @@ try {
   Write-Pairs $Cfg $c
   $state.Restore.PerformClick()
   Assert ($state.Request.Config.size -eq '2340') 'restore returns user-confirmed good profile'
+  $state.Export.PerformClick()
+  Assert ($state.Status.MxOpen.Visible -and (Test-Path -LiteralPath $state.Status.MxPath) -and $state.Status.Glyph -eq 'check') 'a saved file is announced with its location link'
+  # 'One app only' from the side menu: the change button drives the busy state and the app list loads for this phone.
+  function Show-GuidePicker ($Title,$Text,$Items) { if ($Title -eq '보여줄 화면을 고르십시오') { 'app' } else { $Items[1].Key } }
+  function Get-DeviceApps ($Scrcpy,$Serial) { $script:appsSerial=$Serial; @([pscustomobject]@{Label='Among Us';Package='com.x.among';System=$false},[pscustomobject]@{Label='YouTube';Package='com.google.youtube';System=$false}) }
+  $state.Request=$null; $state.Source.PerformClick()
+  Assert ($state.Request.Kind -eq 'source' -and $state.Request.Source.Package -eq 'com.google.youtube' -and $state.Request.Source.Label -eq 'YouTube' -and $script:appsSerial -eq 'TEST') 'one app only can be chosen from the side menu'
   $form.Close(); [Windows.Forms.Application]::DoEvents()
   Assert (-not $form.IsDisposed -and $form.WindowState -eq 'Minimized') 'sidebar X preserves video session and can reopen'
   Assert ((Get-SessionKind 1 'Failed to initialize audio/opus') -eq 'audio') 'audio errors not mistaken for video codec errors'

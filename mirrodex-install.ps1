@@ -49,7 +49,7 @@ function Install-Mirrodex ($Source=$Root, $Paths=(Get-InstallPaths), [switch]$Qu
   [void][IO.Directory]::CreateDirectory($dir)
   # Program files plus this PC's settings; development backups, tests and diagnostics stay behind.
   foreach ($item in Get-ChildItem -LiteralPath $Source -Force) {
-    if ($item.Name -like 'backup-*' -or $item.Name -in @('tests','diagnostics','.git','.claude') -or $item.Name -like '*.tmp') { continue }
+    if ($item.Name -like 'backup-*' -or $item.Name -in @('tests','diagnostics','.git','.claude','.impeccable') -or $item.Name -like '*.tmp') { continue }
     Copy-Item -LiteralPath $item.FullName -Destination $dir -Recurse -Force
   }
   $launcher=Join-Path $dir 'Mirrodex.bat'

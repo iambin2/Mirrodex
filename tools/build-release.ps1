@@ -6,7 +6,7 @@ $root=Split-Path $PSScriptRoot
 . (Join-Path $root 'mirrodex-install.ps1')
 $version=[regex]::Match([IO.File]::ReadAllText((Join-Path $root 'mirrodex-ui.ps1')),"\`$script:AppVersion='([^']+)'").Groups[1].Value
 if (-not $version) { throw 'AppVersion not found in mirrodex-ui.ps1' }
-$skip=@($script:UserDataNames)+@('tests','tools','dist','.git','.gitignore','.claude')
+$skip=@($script:UserDataNames)+@('tests','tools','dist','.git','.gitignore','.claude','.impeccable')
 $stage=Join-Path $OutDir 'stage'; $app=Join-Path $stage 'Mirrodex'
 if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
 [void][IO.Directory]::CreateDirectory($app)

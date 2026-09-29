@@ -101,11 +101,11 @@ Recovery and setup guidance (2026-09-28)
     'Restore settings that worked' and 'Undo the last settings change'.
   · The settings first confirmed with 'Looks good' are kept separately as the known-good restore point.
     Later ordinary saves do not overwrite it. It is replaced only when you choose
-    'Set the current screen as known-good and use it' from the assistant's
-    'Temporary use · Restore · Save troubleshooting info' menu.
+    'Set the current screen as known-good and use it' from 'Finish another way'
+    under the assistant's 'Other options'.
   · A comparison can run for 30 or 10 seconds. Skipping or stopping never adopts new settings.
-    The window title shows the comparison step and approximate time left, and the window
-    keeps its position and size.
+    Comparisons are shown as 1 · 2 · 1 discs (1 = current, 2 = changed). The trial window sits next to
+    the mirror window with a line that shrinks as time runs out, and the window keeps its position and size.
   · After five comparisons you can finish with temporary use, restore or saving troubleshooting info.
   · A disconnection asks you to reconnect the same phone. Only when an encoder failure is clear,
     another encoder from the device's list is offered once, and it is never saved without your confirmation.
@@ -126,17 +126,26 @@ Audio: while mirroring, the phone's playback sound goes to the PC's default outp
   If headphones are connected to the computer, you hear it there. The microphone is not captured.
 
 Side menu and Discord streaming
-  When mirroring starts, a menu appears next to the video window.
-  Quick actions: screen recording, 'Save screenshot' (Pictures\Mirrodex, mirroring keeps running),
-  and 'Live · Lock reconnection'.
-  Screen settings are folded. Click 'Show screen settings' to choose
-  resolution, frame cap, bit rate, video/audio buffer, codec and sound output.
-  Help: 'Tune the screen with the assistant' opens the comparison assistant during mirroring,
-  then mirroring continues.
-  The screen keeps running while you choose values. 'Apply changes · Reconnect' reconnects briefly.
+  When mirroring starts, a menu appears next to the video window. From the top:
+  · Now card: what is shown ('Change' next to it), resolution, fps, bit rate and codec, the phone and
+    connection, state chips (recording time, reconnection locked, 'Saved settings' or 'This session only'),
+    and the result of your last action. After a screenshot, recording or troubleshooting file is saved,
+    'Open file location' opens its folder.
+  · Four keys: screen recording, 'Save screenshot' (Pictures\Mirrodex, mirroring keeps running),
+    'Keep on top' and 'Live · Lock reconnects'. On/off keys show a small circle at the top right:
+    filled when on, hollow when off.
+  · Screen: 'Tune with the assistant' opens the comparison assistant during mirroring, then mirroring
+    continues. Screen settings are folded. Click 'Show screen settings' to choose
+    resolution, frame cap, bit rate, video/audio buffer, codec and sound output.
+  · Connection: switch to wireless, connect another phone. Below: Discord guide, troubleshooting info, updates.
+  Actions marked with ↻ briefly reconnect the screen.
+  The screen keeps running while you choose values. Values chosen but not applied are dashed and counted.
+  'Apply changes · Reconnect' reconnects briefly; with nothing changed the same button reads
+  'Reconnect with the same settings'.
   Applied changes last only for this session. If you like them, click 'Save the running settings'.
   'Restore known-good settings' returns to the restore point you confirmed.
-  While streaming, turn on 'Live · Lock reconnection' so the connection is not cut by mistake.
+  While streaming, turn on 'Live · Lock reconnects' so the connection is not cut by mistake.
+  While locked, reconnecting actions show a lock and cannot be pressed.
   The menu's X only minimizes the menu. You can reopen it from the taskbar.
   In Discord, choose the Mirrodex video window, not the settings window, and turn on sound sharing.
   After reconnecting, you may need to reselect the shared window in Discord.
@@ -146,7 +155,7 @@ New features (2026-09-29)
   · Wireless: when the assistant says no phone is connected, click 'Connect wirelessly · No cable'
     and pair with the code under Wireless debugging (Android 11+).
     If the phone is on a cable, click 'Switch to wireless · Unplug the cable' in the menu, then unplug it.
-  · What to show: 'Change what to show' in the menu picks the whole phone screen, one app only,
+  · What to show: 'Change' on the menu's Now card picks the whole phone screen, one app only,
     or the back/front camera. 'One app only' opens the app on a separate screen, so notifications and
     other apps never appear on stream (Android 10+). Camera mode uses the phone's microphone (Android 12+).
     In Discord, share this window.
@@ -165,7 +174,8 @@ Language (English / 한국어)
   Switching during mirroring does not interrupt the connection.
 
 Screen recording (with sound)
-  Click 'Start recording · Reconnect' in the side menu. The screen reconnects briefly, then recording starts.
+  Click 'Record screen' in the side menu. The screen reconnects briefly, then recording starts.
+  The Now card shows the recording time while it runs.
   Click 'Stop recording · Save file' or close the mirroring window to save the file.
   Saved to: Videos\Mirrodex\Mirrodex-date-time.mp4
   Sound is recorded when 'Sound output' is Computer. When set to Phone, only video is recorded.
@@ -176,9 +186,11 @@ Screen recording (with sound)
   The assistant's comparison trials are never recorded.
 
 Appearance
-  The modern theme (rounded buttons, Pretendard font when installed, new logo) applies to the
-  assistant, connection/error messages, comparison screens and the side menu.
-  Standard Windows window frames, accessibility and keyboard control are kept.
+  One design (ruled rows like a record card, 1 · 2 · 1 comparison discs, on/off lamps) applies to the
+  assistant, connection/error messages, comparison screens and the side menu. The font is Pretendard
+  when installed; otherwise Malgun Gothic for Korean and Segoe UI for English. Standard Windows window
+  frames, keyboard control (Enter = recommended answer, Esc = close), screen readers, high contrast
+  and the 'Animation effects' setting are respected.
 
 2026-09-29 changes: guide windows open to fit their actual content height after DPI scaling;
   long messages scroll. The logo is scaled down from a 256px original with high-quality

@@ -74,7 +74,7 @@ $script:UiEnglish=@{
   'Mirrodex 설정 · 방송에 공유하지 않는 창'='Mirrodex settings · Do not share this window'
   '소리가 휴대폰에서 재생되므로 녹화에는 포함되지 않습니다.'='Sound plays on the phone, so it is not included in the recording.'
   '녹화 파일을 저장했습니다.'='Recording saved.'
-  '방송 중 · 재연결 잠금'='Live · Lock reconnection'
+  '방송 중 · 재연결 잠금'='Live · Lock reconnects'
   '화면 선명도 · 긴 변 px'='Resolution · px'
   '프레임 상한 · fps'='Frame cap · fps'
   '화질 · 전송량'='Quality · bit rate'
@@ -295,8 +295,37 @@ $script:UiEnglish=@{
   '지금 버전으로 계속합니다. 나중에 GitHub의 Releases에서 직접 받을 수도 있습니다.'='Continuing with the current version. You can also download it later from Releases on GitHub.'
   '지금 버전으로 계속하기'='Continue with the current version'
   '화면'='Screen'
+  '바꾸기'='Change'
+  '무선 연결'='Wireless'
+  '케이블 연결'='Cable'
+  '재연결 잠금'='Reconnection locked'
+  '저장된 설정'='Saved settings'
+  '이번 실행에만 쓰는 설정'='This session only'
+  '파일 위치 열기'='Open file location'
+  '화면 녹화 시작 · 동영상 폴더'='Record screen · Videos folder'
+  '스크린샷 저장 · 사진 폴더'='Save screenshot · Pictures folder'
+  '항상 위에 표시 · 미러링 창'='Keep on top · Mirror window'
+  '도우미로 화면 맞추기 · 불편한 점을 한 가지씩 비교합니다'='Tune with the assistant · Compares one discomfort at a time'
+  '화면 설정 접기 · 바꾼 값은 적용하기 전까지 점선으로 표시됩니다'='Hide screen settings · Values not applied yet are dashed'
+  '화면 설정 펼치기 · 선명도, 프레임, 전송량, 완충, 압축, 소리'='Show screen settings · Resolution, fps, bit rate, buffer, codec, sound'
+  '지금 실행 중인 값입니다.'='These are the running values.'
+  '같은 설정으로 다시 연결'='Reconnect with the same settings'
+  '다른 휴대폰 추가 연결 · 새 창에서 연결합니다'='Connect another phone · Opens in a new window'
+  '화면이 잠시 다시 연결되는 작업입니다. Discord에서는 공유 창을 다시 골라야 할 수 있습니다.'='Marks an action that briefly reconnects the screen. In Discord you may need to pick the shared window again.'
+  '파일을 찾지 못했습니다. 옮기거나 지웠을 수 있습니다.'='The file was not found. It may have been moved or deleted.'
+  '다른 선택'='Other options'
+  '찾는 이름이 없습니다. 다른 글자로 찾아 보십시오.'='No matching name. Try other letters.'
+  '2번 바꿔 본 화면이 앞뒤의 1번 현재 화면보다 좋았습니까? 글씨·움직임·반응 중 다른 불편이 생겼다면 현재 화면을 유지하십시오.'='Was 2, the changed screen, better than 1, the current screen before and after it? If text, motion or response got worse in any way, keep the current screen.'
+  '다른 방법으로 마치기 · 임시 사용, 복원, 문제 정보 저장'='Finish another way · Temporary use, restore, troubleshooting info'
 }
 $script:UiPatterns=@(
+  @('^(.+)px · 최대 (.+)fps · (.+)$','{0}px · up to {1}fps · {2}'),
+  @('^(.+) · 케이블 연결$','{0} · Cable'),
+  @('^(.+) · 무선 연결$','{0} · Wireless'),
+  @('^녹화 중 (.+)$','Recording {0}'),
+  @('^적용하지 않은 값 (.+)개$','{0} not applied yet'),
+  @('^약 (.+)초 남았습니다$','About {0}s left'),
+  @('^(.+): (.+) → (.+)$','{0}: {1} → {2}'),
   @('^(.+) 실행 실패$','{0} failed to run'),
   @('^(.+) 응답 시간 초과 \((.+) ms\)\. USB 연결을 확인해 주십시오\.$','{0} timed out ({1} ms). Check the USB connection.'),
   @('^설정 형식 오류: (.+)$','Invalid settings format: {0}'),

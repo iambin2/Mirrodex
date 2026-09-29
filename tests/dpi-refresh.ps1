@@ -8,10 +8,10 @@ foreach ($scale in @(1.0,1.25,1.5)) {
     $form.Show(); [Windows.Forms.Application]::DoEvents()
     if ($scale -ne 1) { $form.Scale((New-Object Drawing.SizeF($scale,$scale))) }
     Fit-GuideContent $form; [Windows.Forms.Application]::DoEvents()
-    $layout=$form.Controls[0]; $close=$layout.Controls[$layout.Controls.Count-1]
-    Assert (-not $form.CancelButton -and $close.Text -eq (T '확인')) "single action has no competing Close button at scale $scale"
-    Assert ($close.Bottom -le $layout.ClientSize.Height-$layout.Padding.Bottom) "close button not clipped at scale $scale"
-    Assert (-not $layout.VerticalScroll.Visible) "short prompt needs no hidden scroll at scale $scale"
+    $layout=$form.MxLayout; $footer=$layout.Controls[$layout.Controls.Count-1]; $close=$form.AcceptButton
+    Assert (-not $form.CancelButton -and $close.Text -eq (T '확인') -and $close.Parent -eq $footer) "single action sits alone in the footer at scale $scale"
+    Assert ($layout.Top+$footer.Bottom -le $form.ClientSize.Height-$layout.Padding.Bottom -and $close.Right -le $footer.ClientSize.Width) "footer action not clipped at scale $scale"
+    Assert (-not $layout.Parent.VerticalScroll.Visible) "short prompt needs no hidden scroll at scale $scale"
     if ($scale -eq 1.25) {
       $bitmap=New-Object Drawing.Bitmap($form.Width,$form.Height)
       try { $form.DrawToBitmap($bitmap,(New-Object Drawing.Rectangle(0,0,$form.Width,$form.Height))); $bitmap.Save((Join-Path $PSScriptRoot 'guide-125-preview.png')) } finally { $bitmap.Dispose() }

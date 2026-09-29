@@ -354,7 +354,7 @@ function Start-Mirror ($Scrcpy, $Adb, $Config, $Serial, [int]$TrialSeconds = 0) 
   # Sources (one app, camera) apply to real sessions only; comparisons always show the whole screen.
   if ($TrialSeconds -eq 0) { $options=@(Get-SourceOptions $script:Source $options) }
   if ($TrialSeconds -eq 0 -and $script:Recording) {
-    $script:RecordFile=New-RecordPath
+    $script:RecordFile=New-RecordPath; $script:RecordStarted=[DateTime]::Now
     $options += @("--record=$script:RecordFile")
     if ($Config.audio -ne 'off') { $options += '--audio-codec=aac' }
   }

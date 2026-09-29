@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-29T00:00:00+09:00",
+  "title": "Design System: Mirrodex",
+  "extensions": {
+    "colorMeta": {
+      "ink": { "role": "primary", "displayName": "Ink", "canonical": "#15171A" },
+      "lamp": { "role": "accent", "displayName": "Lamp (logo eyes)", "canonical": "#B47B0A" },
+      "rec": { "role": "status", "displayName": "Recording", "canonical": "#D0281B" },
+      "success": { "role": "status", "displayName": "Saved", "canonical": "#1D7446" },
+      "danger": { "role": "status", "displayName": "Error / remove", "canonical": "#B42318" },
+      "background": { "role": "neutral", "displayName": "Chart-room ground", "canonical": "#F3F4F6" },
+      "surface": { "role": "neutral", "displayName": "Record card", "canonical": "#FFFFFF" }
+    },
+    "typographyMeta": {
+      "title": { "displayName": "Question", "purpose": "One assistant question per window." },
+      "headline": { "displayName": "Now", "purpose": "What the phone is showing, on the side menu's Now card." },
+      "numeral": { "displayName": "Lens numeral", "purpose": "1 / 2 on comparison discs." },
+      "caption": { "displayName": "Readout", "purpose": "Values, consequences, footnotes." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "trial-drain", "value": "linear, redrawn every 200ms", "purpose": "Time left in a trial; stays on with animations off because it is information." },
+      { "name": "rec-blink", "value": "500ms on / 500ms off", "purpose": "Recording lamp and chip; stops when Windows animation effects are off." }
+    ],
+    "breakpoints": [
+      { "name": "side-menu", "value": "380px wide, scrolls beyond the screen height" },
+      { "name": "dialog", "value": "560px wide, height fits content" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Recommended answer",
+      "kind": "button",
+      "refersTo": "choice-primary",
+      "description": "The first answer in an assistant step; Enter picks it. Consequence on the second line.",
+      "html": "<button class=\"ds-choice ds-choice-primary\"><span class=\"ds-t\">잘 보입니다</span><span class=\"ds-d\">이대로 저장하고 사용하기</span><svg viewBox=\"0 0 16 16\" width=\"14\" height=\"14\"><path d=\"M6 3.5 10.5 8 6 12.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></button>",
+      "css": ".ds-choice{display:grid;grid-template-columns:1fr auto;align-items:center;width:100%;min-height:56px;padding:0 12px;border:1px solid #E1E4E8;border-radius:6px;background:#fff;color:#15171A;font:500 13px/1.2 Pretendard,'Malgun Gothic',sans-serif;text-align:left}.ds-choice .ds-t{grid-column:1}.ds-choice .ds-d{grid-column:1;font-weight:400;font-size:12px;color:#596069}.ds-choice svg{grid-row:1/3;grid-column:2}.ds-choice:hover{background:#EDEFF2}.ds-choice:focus-visible{outline:2px solid #15171A;outline-offset:-2px}.ds-choice-primary{background:#15171A;border-color:#15171A;color:#fff}.ds-choice-primary .ds-d{color:rgba(255,255,255,.8)}.ds-choice-primary:hover{background:#2B2F35}.ds-choice-primary:focus-visible{outline:1.5px solid #fff;outline-offset:-4px}"
+    },
+    {
+      "name": "Quick action key",
+      "kind": "button",
+      "refersTo": "key",
+      "description": "2x2 keys in the side menu. On/off keys carry a lamp: filled when on, hollow when off.",
+      "html": "<button class=\"ds-key ds-key-on\" aria-pressed=\"true\"><span class=\"ds-t\">방송 중</span><span class=\"ds-d\">재연결 잠금</span><i class=\"ds-lamp\"></i></button>",
+      "css": ".ds-key{position:relative;display:grid;width:160px;height:52px;padding:0 12px 0 38px;align-content:center;border:1px solid #E1E4E8;border-radius:6px;background:#fff;color:#15171A;font:500 13px/1.2 Pretendard,'Malgun Gothic',sans-serif;text-align:left}.ds-key .ds-d{font-weight:400;font-size:12px;color:#596069}.ds-lamp{position:absolute;top:12px;right:12px;width:8px;height:8px;border-radius:50%;border:1.3px solid #8D949E}.ds-key:hover{background:#EDEFF2}.ds-key:focus-visible{outline:2px solid #15171A;outline-offset:-2px}.ds-key-on{background:#FBF1D9;border-color:#B47B0A}.ds-key-on .ds-lamp{background:#B47B0A;border-color:#B47B0A}"
+    },
+    {
+      "name": "Ruled row",
+      "kind": "custom",
+      "refersTo": "row",
+      "description": "A line in a side menu group; the reconnect glyph marks actions that interrupt the picture.",
+      "html": "<button class=\"ds-row\"><span class=\"ds-t\">도우미로 화면 맞추기</span><span class=\"ds-d\">불편한 점을 한 가지씩 비교합니다</span><span class=\"ds-g\">↻ ›</span></button>",
+      "css": ".ds-row{display:grid;grid-template-columns:1fr auto;width:100%;min-height:50px;padding:0 12px 0 38px;align-content:center;border:0;border-top:1px solid #E1E4E8;background:#fff;color:#15171A;font:400 13px/1.2 Pretendard,'Malgun Gothic',sans-serif;text-align:left}.ds-row .ds-d{grid-column:1;font-size:12px;color:#596069}.ds-row .ds-g{grid-row:1/3;grid-column:2;color:#596069}.ds-row:hover{background:#EDEFF2}.ds-row:focus-visible{outline:2px solid #15171A;outline-offset:-2px}"
+    },
+    {
+      "name": "Lens track",
+      "kind": "custom",
+      "refersTo": "lens-track",
+      "description": "The comparison 1 · 2 · 1; the current phase filled with ink, time left as a draining line.",
+      "html": "<div class=\"ds-lens\"><b>1</b><i></i><b class=\"on\">2</b><i></i><b>1</b></div>",
+      "css": ".ds-lens{display:flex;align-items:center;gap:8px;font:600 15px Pretendard,'Malgun Gothic',sans-serif}.ds-lens b{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;border:1.2px solid #8D949E;color:#596069;background:#fff}.ds-lens b.on{background:#15171A;border-color:#15171A;color:#fff}.ds-lens i{flex:1;height:1.5px;background:#E1E4E8}"
+    },
+    {
+      "name": "State chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Non-interactive state on the Now card: recording time, reconnection locked, saved / this session only.",
+      "html": "<span class=\"ds-chip ds-chip-rec\"><i></i>녹화 중 01:28</span>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 10px 0 8px;border-radius:999px;background:#F3F4F6;color:#15171A;font:400 12px Pretendard,'Malgun Gothic',sans-serif}.ds-chip i{width:8px;height:8px;border-radius:50%;background:#596069}.ds-chip-rec{background:#FCE9E7}.ds-chip-rec i{background:#D0281B}"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Text input and closed select share one field: 3:1 boundary, 2px focus border.",
+      "html": "<input class=\"ds-input\" placeholder=\"6자리 숫자\">",
+      "css": ".ds-input{height:36px;padding:0 11px;border:1px solid #8D949E;border-radius:6px;background:#fff;color:#15171A;font:400 13px Pretendard,'Malgun Gothic',sans-serif}.ds-input:focus{outline:none;border:2px solid #15171A;padding:0 10px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The refraction record",
+    "overview": "Mirrodex puts a phone on the PC screen and tunes it by asking 'one or two?'. The interface is a ruled record of what is showing now, and every change is compared one at a time: current, changed, current. Nothing that interrupts the live picture happens without saying so first, and nothing is saved without an explicit 'better'.",
+    "keyCharacteristics": [
+      "Ruled label/value rows instead of stacked equal buttons",
+      "1 · 2 · 1 lens discs for every comparison",
+      "Amber lamp from the logo's eyes for anything switched on",
+      "One reconnect glyph on every action that interrupts the picture",
+      "Dashed 'pencil' for values chosen but not applied"
+    ],
+    "rules": [
+      { "name": "One ink per view", "body": "Only the expected next step is filled. With no pending change the side menu has none.", "section": "colors" },
+      { "name": "Shape carries state", "body": "Filled/hollow lamps, lock glyphs, dashes and tone glyphs so state survives high contrast.", "section": "colors" },
+      { "name": "Two columns", "body": "Icons start at the 12px inset, text at 38px, across cards, keys, rows and messages.", "section": "typography" }
+    ],
+    "dos": [
+      "Do mark every reconnecting action with the reconnect glyph and swap it for a lock while locked.",
+      "Do keep the trial window and side menu beside the mirror window, never over it."
+    ],
+    "donts": [
+      "Don't nest cards or add shadows, glass or gradients.",
+      "Don't give leaving-the-flow options the same weight as answers.",
+      "Don't make a destructive action the Enter default."
+    ]
+  }
+}

@@ -97,7 +97,7 @@ try {
   $picker=New-GuidePicker '방송할 앱을 고르십시오' '고른 앱만 새 화면에 열립니다. 휴대폰 알림과 다른 앱은 보이지 않습니다.' $items '이 앱만 보여 주기' -Search
   try {
     $picker.Show(); [Windows.Forms.Application]::DoEvents()
-    $layout=$picker.Controls[0]; $search=@($layout.Controls | Where-Object { $_.PSObject.Properties['Input'] })[0].Input
+    $layout=$picker.MxLayout; $search=@($layout.Controls | Where-Object { $_.PSObject.Properties['Input'] })[0].Input
     $search.Text='tube'; [Windows.Forms.Application]::DoEvents()
     Assert ($picker.MxList.Items.Count -eq 1 -and @($picker.MxList.MxVisible)[0].Key -eq 'y') 'search narrows the list by name or package'
     Assert ($picker.CancelButton -and $picker.AcceptButton) 'picker has Enter to pick and Esc to close'
@@ -106,7 +106,7 @@ try {
   $timer.Add_Tick({
     foreach ($f in @([Windows.Forms.Application]::OpenForms)) {
       if ($f.PSObject.Properties['MxGuide'] -and $f.Visible) {
-        $boxes=@($f.Controls[0].Controls | Where-Object { $_.PSObject.Properties['Input'] } | ForEach-Object { $_.Input })
+        $boxes=@($f.MxLayout.Controls | Where-Object { $_.PSObject.Properties['Input'] } | ForEach-Object { $_.Input })
         $boxes[0].Text=' 192.168.0.9:5555 '; $boxes[1].Text='654321'; $timer.Stop(); $f.AcceptButton.PerformClick()
       }
     }

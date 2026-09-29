@@ -36,7 +36,7 @@ try {
 
   $form=New-GuideForm '3. 화면은 어떠셨습니까?' '가장 불편한 것 하나를 골라 주십시오. 편하게 보였다면 더 바꿀 필요가 없습니다.' @(@{Key='good';Label='잘 보입니다 · 이대로 저장하고 사용하기'},@{Key='again';Label='잘 모르겠습니다 · 화면 다시 보기'})
   $form.Show(); [Windows.Forms.Application]::DoEvents()
-  $layout=$form.Controls[0]; $heading=$layout.Controls[1]; $toggle=$layout.Controls[0].Controls[2]
+  $layout=$form.MxLayout; $heading=$layout.Controls[1]; $toggle=$layout.Controls[0].Controls[2]
   Assert ($form.Text -eq 'Mirrodex Assistant' -and $heading.Text -eq '3. How did the screen look?' -and $form.CancelButton.Text -eq 'Close') 'guide opens in English'
   Assert ($toggle.Text -eq '한국어') 'toggle names the other language'
   $toggle.PerformClick(); [Windows.Forms.Application]::DoEvents()
@@ -50,7 +50,11 @@ try {
   $c=@{codec='h265';encoder='x';size='2340';rate='8M';fps='60';buffer='50';arr='0';serial='T';audio='output';audiobuffer='50';requireaudio='0'}
   $panel=New-Sidebar $c @{Long=2340;Encoders='--video-codec=h265 --video-encoder=x'}; $panel.Show(); [Windows.Forms.Application]::DoEvents()
   $s=$panel.Tag
-  Assert ($s.Apply.Text -eq 'Apply changes · Reconnect' -and $s.Fields.audio.GetItemText($s.Fields.audio.SelectedItem) -eq 'Computer') 'sidebar and option names are English'
+  Assert ($s.Apply.Text -eq 'Reconnect with the same settings' -and $s.Fields.audio.GetItemText($s.Fields.audio.SelectedItem) -eq 'Computer') 'sidebar and option names are English'
+  $s.Fields.buffer.SelectedItem='80'
+  Assert ($s.Apply.Text -eq 'Apply changes · Reconnect' -and $s.Draft.Text -eq '1 not applied yet') 'a picked value turns Apply into the English commit action'
+  $panel.MxLayout.Controls[0].Controls[2].PerformClick(); [Windows.Forms.Application]::DoEvents()
+  Assert ($s.Source.Text -eq '바꾸기' -and $s.Source.AccessibleName -eq '보여줄 화면 바꾸기' -and $s.Draft.Text -eq '적용하지 않은 값 1개') 'the side menu, its screen-reader names and live counts switch language in place'
   Assert ($s.Fields.audio.SelectedItem -eq '노트북' -and (Get-SidebarConfig $s).audio -eq 'output') 'translated display keeps internal option values'
   Write-Output "PASS: $script:checks language checks ($($PSVersionTable.PSVersion))"
 } finally {

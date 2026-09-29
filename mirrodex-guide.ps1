@@ -1,7 +1,8 @@
 ﻿# Native Windows guide. Loaded without opening a window; UI assemblies load on demand.
 . (Join-Path $PSScriptRoot 'mirrodex-ui.ps1')
-# Every assistant screen is one pattern: header, title, explanation, optional content (list or fields),
-# then actions with the expected next step as the only primary button.
+# Every assistant screen is one pattern: header, question, explanation, optional content (lens track, list, fields),
+# then the answers as command links with the recommended one filled, then "other options" (quiet), then the footer.
+# A dialog with a single action puts it in the footer like any Windows dialog: [action] [Close], right-aligned.
 function New-GuideForm ($Title, $Text, $Choices, $Content=@(), [switch]$Closable) {
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
@@ -17,46 +18,81 @@ function New-GuideForm ($Title, $Text, $Choices, $Content=@(), [switch]$Closable
   $layout = New-UiLayout $form
   Add-BrandHeader $layout
   $layout.Controls.Add((New-UiText $Title 'title' $width))
-  $layout.Controls.Add((New-UiText $Text 'muted' $width))
+  $layout.Controls.Add((New-UiText $Text 'body' $width))
   foreach ($control in @($Content)) { $layout.Controls.Add($control) }
-  foreach ($choice in $Choices) {
-    $variant=if ($choice.Variant) { $choice.Variant } elseif ($choice -eq $Choices[0]) { 'primary' } else { 'secondary' }
-    $button=New-UiButton $choice.Label $choice.Key $variant ([string]$choice.Icon)
-    $button.Dock='Top'; $button.AutoSize=$true
-    $button.Add_Click({ $this.FindForm().Tag=[string]$this.Tag; $this.FindForm().Close() })
-    if ($choice -eq $Choices[0]) { $form.AcceptButton=$button }
-    $layout.Controls.Add($button)
+  $choices=@($Choices | Where-Object { $_ })
+  $quiet=@($choices | Where-Object { $_.Variant -eq 'quiet' })
+  $answers=@($choices | Where-Object { $_.Variant -ne 'quiet' })
+  $buttons=@(); $footer=@()
+  if ($choices.Count -eq 1 -and -not $quiet.Count) {
+    $choice=$choices[0]
+    $button=New-UiButton $choice.Label $choice.Key $(if ($choice.Variant) { $choice.Variant } else { 'primary' }) ([string]$choice.Icon)
+    $button.AutoSize=$true; $button.AutoSizeMode='GrowAndShrink'
+    $buttons+=$button; $footer+=$button
+  } else {
+    foreach ($choice in $answers) {
+      $variant=switch ($choice.Variant) { 'danger' {'danger'} 'secondary' {'choice'} default { if ($buttons.Count) {'choice'} else {'choice-primary'} } }
+      $button=New-UiButton $choice.Label $choice.Key $variant ([string]$choice.Icon) $(if ($variant -eq 'danger') {''} else {'chevron-right'})
+      $button.Dock='Top'
+      $layout.Controls.Add($button); $buttons+=$button
+    }
+    if ($quiet.Count) {
+      $layout.Controls.Add((New-UiText '다른 선택' 'section'))
+      foreach ($choice in $quiet) {
+        $button=New-UiButton $choice.Label $choice.Key 'quiet' ([string]$choice.Icon)
+        $button.Dock='Top'; $button.Margin=New-UiPadding 0 0 0 2
+        $layout.Controls.Add($button); $buttons+=$button
+      }
+    }
   }
-  if (@($Choices).Count -gt 1 -or $Closable) {
+  foreach ($button in $buttons) { $button.Add_Click({ $this.FindForm().Tag=[string]$this.Tag; $this.FindForm().Close() }) }
+  # Enter answers with the recommended choice, never with a destructive one; focus starts there, not on the header.
+  if ($buttons.Count -and $buttons[0].Variant -ne 'danger') { $form.AcceptButton=$buttons[0]; $form | Add-Member -NotePropertyName MxFocus -NotePropertyValue $buttons[0] }
+  if ($choices.Count -gt 1 -or $Closable) {
     $close=New-UiButton '닫기' '' 'secondary'
-    $close.Dock='Top'; $close.Margin=New-UiPadding 0 $script:UiSpace.Gap 0 0
+    $close.AutoSize=$true; $close.AutoSizeMode='GrowAndShrink'
     $close.DialogResult=[Windows.Forms.DialogResult]::Cancel
-    $layout.Controls.Add($close); $form.CancelButton=$close
+    $form.CancelButton=$close; $footer+=$close
+    if (-not $form.AcceptButton) { $form | Add-Member -NotePropertyName MxFocus -NotePropertyValue $close -Force }
   } else {
     # One action only: a second 'Close' button would read as a second answer. Esc and the title bar X still cancel.
     $form.KeyPreview=$true
     $form.Add_KeyDown({ if ($_.KeyCode -eq 'Escape') { $this.Close() } })
   }
+  if ($footer.Count) {
+    $bar=New-Object Windows.Forms.TableLayoutPanel
+    $bar.AutoSize=$true; $bar.Dock='Top'; $bar.RowCount=1; $bar.ColumnCount=$footer.Count+1
+    $bar.Margin=New-UiPadding 0 $script:UiSpace.Gap 0 0
+    [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Percent',100)))
+    for ($i=0; $i -lt $footer.Count; $i++) {
+      [void]$bar.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('AutoSize')))
+      $footer[$i].Margin=New-UiPadding $script:UiSpace.Gap 0 0 0
+      $bar.Controls.Add($footer[$i],$i+1,0)
+    }
+    $bar | Add-Member -NotePropertyName MxFooter -NotePropertyValue $true
+    $layout.Controls.Add($bar)
+  }
   $layout.RowCount=$layout.Controls.Count
   for ($i=0;$i -lt $layout.RowCount;$i++) { [void]$layout.RowStyles.Add((New-Object Windows.Forms.RowStyle('AutoSize'))) }
-  $form.Add_Shown({ Fit-GuideContent $this })
+  $form.Add_Shown({ Fit-GuideContent $this; if ($this.PSObject.Properties['MxFocus'] -and $this.MxFocus) { $this.ActiveControl=$this.MxFocus } })
   Complete-UiForm $form
   return $form
 }
 
 function Fit-GuideContent ($Form) {
-  # Measure after native DPI scaling, including header, button margins and close action.
-  $layout=$Form.Controls[0]
+  # Measure after native DPI scaling, including header, button margins and the footer.
+  $layout=$Form.MxLayout; $scroll=$layout.Parent
   $area=[Windows.Forms.Screen]::FromControl($Form).WorkingArea
   $Form.MaximumSize=$area.Size
   $layout.PerformLayout()
-  $preferred=$layout.GetPreferredSize((New-Object Drawing.Size($Form.ClientSize.Width,0)))
+  $width=$scroll.ClientSize.Width+$(if ($scroll.VerticalScroll.Visible) { [Windows.Forms.SystemInformation]::VerticalScrollBarWidth } else { 0 })
+  $preferred=$layout.GetPreferredSize((New-Object Drawing.Size($width,0)))
   $chrome=$Form.Height-$Form.ClientSize.Height
   $height=[Math]::Min($preferred.Height+16,$area.Height-$chrome-32)
-  $Form.ClientSize=New-Object Drawing.Size($Form.ClientSize.Width,[Math]::Max(200,$height))
-  $layout.AutoScrollMinSize=New-Object Drawing.Size(0,$preferred.Height)
+  # Height only, so a scrollbar shown before fitting never narrows the dialog.
+  $Form.Height=[Math]::Max(200,$height)+$chrome
   $layout.PerformLayout()
-  $Form.Top=[Math]::Max($area.Top,$area.Top+[int](($area.Height-$Form.Height)/2))
+  if ($Form.StartPosition -ne 'Manual') { $Form.Top=[Math]::Max($area.Top,$area.Top+[int](($area.Height-$Form.Height)/2)) }
 }
 
 function Show-GuideChoice ($Title, $Text, $Choices, [switch]$Closable, $Content=@()) {
@@ -69,14 +105,23 @@ function Show-GuideChoice ($Title, $Text, $Choices, [switch]$Closable, $Content=
 }
 
 # List picker: optional search field above the list; double-click or Enter picks. Returns the key, or $null if closed.
-function New-GuidePicker ($Title, $Text, $Items, [string]$Action, [switch]$Search) {
+# The current choice (Selected) starts highlighted, so Enter keeps what is already there.
+function New-GuidePicker ($Title, $Text, $Items, [string]$Action, [switch]$Search, [string]$Selected='') {
   $content=@()
   if ($Search) { $filter=New-UiInput '' '이름으로 찾기' '이름으로 찾기'; $content+=$filter }
   $list=New-UiList @($Items | ForEach-Object { if ($_.Detail) { "$(T $_.Label)`t$(T $_.Detail)" } else { T $_.Label } })
   $list | Add-Member -NotePropertyName MxItems -NotePropertyValue @($Items)
   $list | Add-Member -NotePropertyName MxVisible -NotePropertyValue @($Items)
-  if (@($Items).Count) { $list.SelectedIndex=0 }
+  if (@($Items).Count) { $list.SelectedIndex=[Math]::Max(0,[array]::IndexOf([string[]]@($Items | ForEach-Object { [string]$_.Key }),$Selected)) }
   $list.Add_DoubleClick({ if ($this.SelectedIndex -ge 0) { $f=$this.FindForm(); $f.Tag='pick'; $f.Close() } })
+  # The list sits in a ruled card; an empty search says so instead of showing a blank box.
+  $frame=New-UiCard 1
+  $frame.AutoSize=$false; $frame.Margin=New-UiPadding 0 0 0 $script:UiSpace.Body
+  $empty=New-UiText '찾는 이름이 없습니다. 다른 글자로 찾아 보십시오.' 'caption'
+  $empty.Margin=New-UiPadding 11 10 11 10; $empty.Visible=$false
+  $list | Add-Member -NotePropertyName MxEmpty -NotePropertyValue $empty
+  $frame.Controls.Add($empty); $frame.Controls.Add($list)
+  [void]$frame.RowStyles.Add((New-Object Windows.Forms.RowStyle('AutoSize'))); [void]$frame.RowStyles.Add((New-Object Windows.Forms.RowStyle('Percent',100)))
   if ($Search) {
     $filter.Input | Add-Member -NotePropertyName MxList -NotePropertyValue $list
     $filter.Input.Add_TextChanged({
@@ -85,17 +130,20 @@ function New-GuidePicker ($Title, $Text, $Items, [string]$Action, [switch]$Searc
       $l.BeginUpdate(); $l.Items.Clear()
       foreach ($item in $l.MxVisible) { [void]$l.Items.Add($(if ($item.Detail) { "$(T $item.Label)`t$(T $item.Detail)" } else { T $item.Label })) }
       if ($l.Items.Count) { $l.SelectedIndex=0 }; $l.EndUpdate()
+      $l.MxEmpty.Visible=-not $l.Items.Count
     })
   }
-  $content+=$list
+  $content+=$frame
   $form=New-GuideForm $Title $Text @(@{Key='pick';Label=$Action}) $content -Closable
   # Rows are measured after DPI scaling (ItemHeight is already in device pixels): 3 to 6 rows, then it scrolls.
-  $list.Height=[Math]::Min(6,[Math]::Max(3,@($Items).Count))*$list.ItemHeight+2
+  $frame.Height=[Math]::Min(6,[Math]::Max(3,@($Items).Count))*$list.ItemHeight+2*$frame.Padding.Top
   $form | Add-Member -NotePropertyName MxList -NotePropertyValue $list
+  # Typing starts in the search field; without one, arrow keys move in the list.
+  $form | Add-Member -NotePropertyName MxFocus -NotePropertyValue $(if ($Search) { $filter.Input } else { $list }) -Force
   return $form
 }
-function Show-GuidePicker ($Title, $Text, $Items, [string]$Action, [switch]$Search) {
-  $form=New-GuidePicker $Title $Text $Items $Action -Search:$Search
+function Show-GuidePicker ($Title, $Text, $Items, [string]$Action, [switch]$Search, [string]$Selected='') {
+  $form=New-GuidePicker $Title $Text $Items $Action -Search:$Search -Selected $Selected
   try {
     [void]$form.ShowDialog()
     $list=$form.MxList
@@ -107,18 +155,37 @@ function Show-GuidePicker ($Title, $Text, $Items, [string]$Action, [switch]$Sear
 function Show-GuideInput ($Title, $Text, $Fields, [string]$Action) {
   $content=@(); $inputs=@{}
   foreach ($field in $Fields) {
-    $label=New-UiText $field.Label 'body'; $label.Font=New-UiFont 'Label'
+    $label=New-UiText $field.Label 'body'; Set-UiFont $label 'Label'; $label.Margin=New-UiPadding 0 0 0 6
     $input=New-UiInput ([string]$field.Value) ([string]$field.Placeholder) $field.Label
+    $input.Margin=New-UiPadding 0 0 0 $script:UiSpace.Inset
     $content+=$label; $content+=$input; $inputs[$field.Key]=$input.Input
   }
   $content[-1].Margin=New-UiPadding 0 0 0 $script:UiSpace.Body
   $form=New-GuideForm $Title $Text @(@{Key='ok';Label=$Action}) $content -Closable
+  $form | Add-Member -NotePropertyName MxFocus -NotePropertyValue $inputs[$Fields[0].Key] -Force
   try {
     [void]$form.ShowDialog()
     if ($form.Tag -ne 'ok') { return $null }
     $values=@{}; foreach ($key in $inputs.Keys) { $values[$key]=$inputs[$key].Text.Trim() }
     return $values
   } finally { $form.Dispose() }
+}
+# The trial window: the phase as a lens disc (1 · 2 · 1) and the time left as a draining line.
+# The first check and 'watch again' compare nothing, so they show only the time line.
+function New-TrialForm ([int]$Seconds) {
+  $phase=[array]::IndexOf([string[]]@('현재 화면','바꿔 본 화면','현재 화면 다시 보기'),[string]$script:TrialLabel)
+  $track=if ($phase -ge 0) { New-UiLensTrack $phase -1 -Timer } else { New-UiLensTrack -Timer -NoDiscs }
+  $track.TimeText=T "약 $($Seconds)초 남았습니다"
+  $form=New-GuideForm $script:TrialLabel '같은 앱을 움직여 보십시오. 시간이 끝나면 안내로 돌아옵니다. 도중에 닫으면 변경 설정은 채택하지 않습니다.' @(@{Key='stop';Label='시험 중단 · 설정 유지';Variant='secondary'}) @($track)
+  $form | Add-Member -NotePropertyName MxTrack -NotePropertyValue $track
+  return $form
+}
+# What one comparison changes, in the side menu's own names (for people who know the numbers; the assistant never asks).
+function Get-ConfigChangeLines ($Before, $After) {
+  $names=@{size='화면 선명도 · 긴 변 px';fps='프레임 상한 · fps';rate='화질 · 전송량';buffer='영상 완충 · ms';codec='화면 압축 방식'}
+  foreach ($key in @('size','fps','rate','buffer','codec')) {
+    if ([string]$Before[$key] -ne [string]$After[$key]) { "$($names[$key]): $($Before[$key]) → $($After[$key])" }
+  }
 }
 
 function Get-GuideCandidate ($Config, $Device, $Symptom, $Tried) {
@@ -149,18 +216,20 @@ function Get-GuideCandidate ($Config, $Device, $Symptom, $Tried) {
 }
 
 function Compare-GuideConfig ($Scrcpy, $Adb, $Baseline, $Candidate, $Serial) {
-  foreach ($phase in @('현재 화면','바꿔 본 화면','현재 화면 다시 보기')) {
-    $pick=Show-GuideChoice $phase "같은 앱에서 같은 동작을 해 보십시오. 시험 창의 크기와 위치를 이어서 사용합니다.`n`n30초 뒤 안내로 돌아옵니다. 시간이 부족하면 짧게 시험하거나 비교를 건너뛸 수 있습니다." @(@{Key='start';Label='준비 완료 · 30초 보기'},@{Key='short';Label='10초만 보기'},@{Key='skip';Label='비교 건너뛰기 · 현재 설정 유지'})
+  $phases=@('현재 화면','바꿔 본 화면','현재 화면 다시 보기')
+  for ($i=0; $i -lt 3; $i++) {
+    $phase=$phases[$i]
+    $pick=Show-GuideChoice $phase "같은 앱에서 같은 동작을 해 보십시오. 시험 창의 크기와 위치를 이어서 사용합니다.`n`n30초 뒤 안내로 돌아옵니다. 시간이 부족하면 짧게 시험하거나 비교를 건너뛸 수 있습니다." @(@{Key='start';Label='준비 완료 · 30초 보기'},@{Key='short';Label='10초만 보기'},@{Key='skip';Label='비교 건너뛰기 · 현재 설정 유지';Variant='quiet'}) -Content @(New-UiLensTrack $i)
     if ($pick -eq 'skip') { return $false }
     $seconds=if ($pick -eq 'short') { 10 } else { 30 }
     $script:TrialLabel=$phase
     $trial = if ($phase -eq '바꿔 본 화면') { $Candidate } else { $Baseline }
     Start-Mirror $Scrcpy $Adb $trial $Serial $seconds
   }
-  $answer=Show-GuideChoice '어느 쪽이 더 편하셨습니까?' '가운데의 바꿔 본 화면이 더 좋았습니까? 글씨·움직임·반응 중 다른 불편이 생겼다면 현재 화면을 유지하십시오.' @(
+  $answer=Show-GuideChoice '어느 쪽이 더 편하셨습니까?' '2번 바꿔 본 화면이 앞뒤의 1번 현재 화면보다 좋았습니까? 글씨·움직임·반응 중 다른 불편이 생겼다면 현재 화면을 유지하십시오.' @(
     @{Key='keep';Label='비슷하거나 판단하기 어렵습니다 · 현재 설정 유지'},
     @{Key='better';Label='바꿔 본 화면이 더 좋습니다 · 이 설정 저장'},
-    @{Key='worse';Label='바꿔 본 화면이 더 불편합니다 · 현재 설정 유지'})
+    @{Key='worse';Label='바꿔 본 화면이 더 불편합니다 · 현재 설정 유지'}) -Content @(New-UiLensTrack -1 1)
   return ($answer -eq 'better')
 }
 
@@ -189,7 +258,9 @@ function Invoke-Guide ($Scrcpy, $Adb, $Current, $Device, $Serial) {
     $best=Get-StartingConfig $Device $Serial $environment
   }
   $saved=($Current -and $Current.serial -eq $Serial)
-  $entry=Show-GuideChoice '2. 휴대폰 화면 확인' "30초 동안 평소 쓰는 앱을 움직여 보십시오. 휴대폰 자체 화면은 꺼질 수 있습니다. 시험 화면이 닫히면 이 안내로 돌아옵니다." (@(@{Key='start';Label='30초 동안 화면 보기'})+@(Get-GuideExitChoices $Serial))
+  # Leaving without a trial is possible but secondary: the exits sit under 'other options'.
+  $exits=@(Get-GuideExitChoices $Serial | ForEach-Object { $_.Variant='quiet'; $_ })
+  $entry=Show-GuideChoice '2. 휴대폰 화면 확인' "30초 동안 평소 쓰는 앱을 움직여 보십시오. 휴대폰 자체 화면은 꺼질 수 있습니다. 시험 화면이 닫히면 이 안내로 돌아옵니다." (@(@{Key='start';Label='30초 동안 화면 보기'})+$exits)
   if ($entry -ne 'start') { return (Complete-Guide $entry $best $Serial) }
   $attempts=0; $alternateUsed=$false
   $script:TrialLabel='현재 화면'
@@ -219,7 +290,7 @@ function Invoke-Guide ($Scrcpy, $Adb, $Current, $Device, $Serial) {
       @{Key='blur';Label='글씨나 화면이 흐릿합니다'},
       @{Key='delay';Label='누른 뒤 반응이 늦습니다'},
       @{Key='again';Label='잘 모르겠습니다 · 화면 다시 보기'},
-      @{Key='finish';Label='임시 사용 · 복원 · 문제 정보 저장'})
+      @{Key='finish';Label='다른 방법으로 마치기 · 임시 사용, 복원, 문제 정보 저장';Variant='quiet'})
     if ($symptom -eq 'finish') {
       $action=Show-GuideChoice '어떻게 마치시겠습니까?' '확인하지 않은 설정은 저장하지 않고 사용할 수 있습니다. 정상 설정은 직접 지정했을 때만 바뀝니다.' (@(Get-GuideExitChoices $Serial)+@(@{Key='pin';Label='현재 화면을 정상 설정으로 지정하고 사용'}))
       if ($action -eq 'pin') { Save-Config $best; Save-Profile 'good' $best; return $best }
@@ -237,7 +308,9 @@ function Invoke-Guide ($Scrcpy, $Adb, $Current, $Device, $Serial) {
       $action=Show-GuideChoice '이번 비교를 마쳤습니다' "최대 다섯 가지를 비교했습니다. 완벽한 설정을 찾았다는 뜻은 아닙니다.`n`n케이블을 PC에 직접 꽂고, 무선이면 공유기 가까이 이동해 보십시오. 휴대폰 자체에서도 끊기는지 확인해 주십시오." @(Get-GuideExitChoices $Serial)
       return (Complete-Guide $action $best $Serial)
     }
-    [void](Show-GuideChoice '한 가지 설정만 바꿔 비교합니다' ($next.Explanation + "`n`n현재 → 변경 → 현재 화면을 30초씩 보여드립니다. 좋아졌다고 선택하기 전에는 저장하지 않습니다.") @(@{Key='compare';Label='약 90초 동안 비교하기'}))
+    $changes=New-UiText (@(Get-ConfigChangeLines $best $next.Config) -join "`n") 'caption' 520
+    $changes.Margin=New-UiPadding 0 0 0 $script:UiSpace.Body
+    [void](Show-GuideChoice '한 가지 설정만 바꿔 비교합니다' ($next.Explanation + "`n`n현재 → 변경 → 현재 화면을 30초씩 보여드립니다. 좋아졌다고 선택하기 전에는 저장하지 않습니다.") @(@{Key='compare';Label='약 90초 동안 비교하기'}) -Content @((New-UiLensTrack),$changes))
     $comparisons++
     try { $better=Compare-GuideConfig $Scrcpy $Adb $best $next.Config $Serial }
     catch [OperationCanceledException] { throw }

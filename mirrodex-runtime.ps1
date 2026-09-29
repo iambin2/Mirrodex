@@ -4,7 +4,7 @@ $script:LastSession = $null
 $script:TrialLabel = '화면 확인'
 $script:TrialGeometry = $null
 $script:SidebarEnabled = $false
-$script:Recording = $false; $script:RecordFile = $null; $script:LastRecording = $null; $script:SidebarExpanded = $false
+$script:Recording = $false; $script:RecordFile = $null; $script:RecordStarted = $null; $script:LastRecording = $null; $script:SidebarExpanded = $false
 $script:Source = @{Kind='screen'}; $script:Notice = $null; $script:EnginePath = $null; $script:DeviceLocks = @{}
 $script:AlwaysOnTop = ((Get-UiPreference 'ontop' '0') -eq '1'); $script:TopHandle = [IntPtr]::Zero; $script:TopApplied = $null
 
@@ -122,7 +122,7 @@ function Get-RecoveryChoice ($Kind, $CanAlternate, $CanRetry=$true, [switch]$Can
   if ($CanRetry) { $choices+=@{Key='retry';Label='연결을 확인했습니다 · 같은 설정으로 재시도'} }
   if ($CanAlternate) { $choices+=@{Key='alternate';Label='다른 인코더로 한 번 시험하기'} }
   if ($CanGuide) { $choices+=@{Key='guide';Label='도우미로 화면 다시 맞추기'} }
-  $choices+=@{Key='export';Label='문제 정보 저장하고 종료'}
+  $choices+=@{Key='export';Label='문제 정보 저장하고 종료';Variant='quiet'}
   return (Show-GuideChoice '화면 실행 확인' $text $choices)
 }
 
@@ -180,7 +180,7 @@ function Invoke-MirrorProcess ($File, [string[]]$Arguments, [int]$TrialSeconds=0
   try {
     if ($TrialSeconds -gt 0) {
       Initialize-WindowApi
-      $form=New-GuideForm $script:TrialLabel '같은 앱을 움직여 보십시오. 시간이 끝나면 안내로 돌아옵니다. 도중에 닫으면 변경 설정은 채택하지 않습니다.' @(@{Key='stop';Label='시험 중단 · 설정 유지'})
+      $form=New-TrialForm $TrialSeconds
       $form.Show()
     } elseif ($script:SidebarEnabled -and $script:ActiveConfig -and $script:PanelDevice) {
       Initialize-WindowApi
@@ -206,12 +206,7 @@ function Invoke-MirrorProcess ($File, [string[]]$Arguments, [int]$TrialSeconds=0
           $r=New-Object MirrodexWindow+Rect; $c=New-Object MirrodexWindow+Rect
           if ([MirrodexWindow]::GetWindowRect($handle,[ref]$r) -and [MirrodexWindow]::GetClientRect($handle,[ref]$c) -and $r.Left -gt -30000 -and $c.Right -gt 0) {
             $script:TrialGeometry=@($r.Left,$r.Top,$c.Right,$c.Bottom)
-            if ($panel.WindowState -eq 'Normal') {
-              $area=[Windows.Forms.Screen]::FromHandle($handle).WorkingArea
-              $x=if ($r.Right+$panel.Width+8 -le $area.Right) { $r.Right+8 } else { [Math]::Max($area.Left,$r.Left-$panel.Width-8) }
-              $y=[Math]::Max($area.Top,[Math]::Min($r.Top,$area.Bottom-$panel.Height))
-              if ($panel.Left -ne $x -or $panel.Top -ne $y) { $panel.Location=New-Object Drawing.Point($x,$y) }
-            }
+            Move-BesideMirror $panel $handle $r
           }
         }
       }
@@ -220,12 +215,20 @@ function Invoke-MirrorProcess ($File, [string[]]$Arguments, [int]$TrialSeconds=0
         if (-not $form.Visible) { $cancelled=$true; break }
         $left=[Math]::Max(0,$TrialSeconds-[int]$timer.Elapsed.TotalSeconds)
         $form.Text=T "Mirrodex · $script:TrialLabel · 약 $left 초"
+        if ($form.PSObject.Properties['MxTrack']) {
+          $form.MxTrack.Remaining=[float][Math]::Max(0,1-$timer.Elapsed.TotalSeconds/$TrialSeconds)
+          $form.MxTrack.TimeText=T "약 $($left)초 남았습니다"; $form.MxTrack.AccessibleName=$form.MxTrack.TimeText; $form.MxTrack.Invalidate()
+        }
         $p.Refresh()
         $handle=$p.MainWindowHandle
         if ($handle -and $handle -ne [IntPtr]::Zero) {
           [void][MirrodexWindow]::SetWindowText($handle,(T "Mirrodex · $script:TrialLabel · 약 $left 초"))
           $r=New-Object MirrodexWindow+Rect; $c=New-Object MirrodexWindow+Rect
-          if ([MirrodexWindow]::GetWindowRect($handle,[ref]$r) -and [MirrodexWindow]::GetClientRect($handle,[ref]$c) -and $r.Left -gt -30000 -and $c.Right -gt 0) { $script:TrialGeometry=@($r.Left,$r.Top,$c.Right,$c.Bottom) }
+          if ([MirrodexWindow]::GetWindowRect($handle,[ref]$r) -and [MirrodexWindow]::GetClientRect($handle,[ref]$c) -and $r.Left -gt -30000 -and $c.Right -gt 0) {
+            $script:TrialGeometry=@($r.Left,$r.Top,$c.Right,$c.Bottom)
+            # The trial window never covers the picture being judged: it waits beside the mirror, like the side menu.
+            Move-BesideMirror $form $handle $r
+          }
         }
         if ($timer.Elapsed.TotalSeconds -gt ($TrialSeconds+20)) { throw '시험 실행 응답 시간이 초과됐습니다.' }
       }
@@ -241,6 +244,16 @@ function Invoke-MirrorProcess ($File, [string[]]$Arguments, [int]$TrialSeconds=0
     if ($started -and -not $p.HasExited) { [void]$p.CloseMainWindow(); if (-not $p.WaitForExit(2000)) { $p.Kill() } }
     $p.Dispose(); if ($form) { $form.Dispose() }; if ($panel) { $panel.Dispose() }
   }
+}
+
+# Side menu and trial window sit beside the mirror window (right if there is room, else left) and follow it,
+# unless the user minimized them.
+function Move-BesideMirror ($Window, $Handle, $Rect) {
+  if ($Window.WindowState -ne 'Normal') { return }
+  $area=[Windows.Forms.Screen]::FromHandle($Handle).WorkingArea
+  $x=if ($Rect.Right+$Window.Width+8 -le $area.Right) { $Rect.Right+8 } else { [Math]::Max($area.Left,$Rect.Left-$Window.Width-8) }
+  $y=[Math]::Max($area.Top,[Math]::Min($Rect.Top,$area.Bottom-$Window.Height))
+  if ($Window.Left -ne $x -or $Window.Top -ne $y) { $Window.StartPosition='Manual'; $Window.Location=New-Object Drawing.Point($x,$y) }
 }
 
 function Start-ResilientMirror ($Scrcpy, $Adb, $Config, $Serial) {
@@ -322,7 +335,8 @@ function Select-MirrorSource ($Button, $Status, $Serial) {
     @{Key='app';Label='앱 하나만';Detail='방송용 · 알림과 다른 앱은 보이지 않습니다 (Android 10 이상)'},
     @{Key='back';Label='후면 카메라';Detail='휴대폰 카메라를 PC 화면에 띄웁니다 (Android 12 이상)'},
     @{Key='front';Label='전면 카메라';Detail='휴대폰 카메라를 PC 화면에 띄웁니다 (Android 12 이상)'})
-  $kind=Show-GuidePicker '보여줄 화면을 고르십시오' '바꾸면 화면이 잠시 다시 연결됩니다. 카메라는 PC 마이크 대신 휴대폰 마이크 소리를 씁니다.' $kinds '이 화면 보여 주기'
+  $current=if ($script:Source.Kind -eq 'camera') { $script:Source.Facing } else { [string]$script:Source.Kind }
+  $kind=Show-GuidePicker '보여줄 화면을 고르십시오' '바꾸면 화면이 잠시 다시 연결됩니다. 카메라는 PC 마이크 대신 휴대폰 마이크 소리를 씁니다.' $kinds '이 화면 보여 주기' -Selected $current
   if (-not $kind) { return $null }
   switch ($kind) {
     'screen' { return @{Kind='screen'} }
@@ -332,9 +346,9 @@ function Select-MirrorSource ($Button, $Status, $Serial) {
       $apps=$null
       Invoke-UiBusy $Button $Status '앱 목록을 불러오는 중입니다…' { $script:LoadedApps=Get-DeviceApps $script:EnginePath $Serial }
       $apps=$script:LoadedApps
-      Set-UiStatus $Status (Get-SourceLabel $script:Source) 'info'
+      Set-UiStatus $Status ''
       $items=@($apps | ForEach-Object { @{Key=$_.Package;Label=$_.Label;Detail=$_.Package} })
-      $package=Show-GuidePicker '방송할 앱을 고르십시오' '고른 앱만 새 화면에 열립니다. 휴대폰 알림과 다른 앱은 보이지 않습니다.' $items '이 앱만 보여 주기' -Search
+      $package=Show-GuidePicker '방송할 앱을 고르십시오' '고른 앱만 새 화면에 열립니다. 휴대폰 알림과 다른 앱은 보이지 않습니다.' $items '이 앱만 보여 주기' -Search -Selected ([string]$script:Source.Package)
       if (-not $package) { return $null }
       return @{Kind='app';Package=$package;Label=@($apps | Where-Object { $_.Package -eq $package })[0].Label}
     }
