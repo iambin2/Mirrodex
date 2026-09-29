@@ -12,13 +12,13 @@ function New-TestZip ($Folder, $Zip) {
 }
 try {
   # Release metadata from the GitHub API.
-  function Invoke-RestMethod { [pscustomobject]@{tag_name='v2.1.0';body="Faster start`n`nNew menu";assets=@(
-    [pscustomobject]@{name='Mirrodex-2.1.0.zip';browser_download_url='https://example.invalid/z';size=12000000},
-    [pscustomobject]@{name='Mirrodex-2.1.0.zip.sha256';browser_download_url='https://example.invalid/s';size=90})} }
+  function Invoke-RestMethod { [pscustomobject]@{tag_name='v9.1.0';body="Faster start`n`nNew menu";assets=@(
+    [pscustomobject]@{name='Mirrodex-9.1.0.zip';browser_download_url='https://example.invalid/z';size=12000000},
+    [pscustomobject]@{name='Mirrodex-9.1.0.zip.sha256';browser_download_url='https://example.invalid/s';size=90})} }
   $release=Get-LatestRelease
-  Assert ($release.Version -eq [version]'2.1.0' -and $release.Zip -like '*/z' -and $release.Sum -like '*/s') 'latest release and its two files found'
+  Assert ($release.Version -eq [version]'9.1.0' -and $release.Zip -like '*/z' -and $release.Sum -like '*/s') 'latest release and its two files found'
   Assert ((Test-NewerRelease $release) -and -not (Test-NewerRelease @{Version=[version]$script:AppVersion}) -and -not (Test-NewerRelease $null)) 'only a higher version counts as new'
-  function Invoke-RestMethod { [pscustomobject]@{tag_name='v2.1.0';assets=@([pscustomobject]@{name='Mirrodex-2.1.0.zip';browser_download_url='x';size=1})} }
+  function Invoke-RestMethod { [pscustomobject]@{tag_name='v9.1.0';assets=@([pscustomobject]@{name='Mirrodex-9.1.0.zip';browser_download_url='x';size=1})} }
   Assert ($null -eq (Get-LatestRelease)) 'a release without a checksum is never offered'
   Remove-Item function:Invoke-RestMethod
 
@@ -32,10 +32,10 @@ try {
   $target=Join-Path $temp 'installed'; [void][IO.Directory]::CreateDirectory((Join-Path $target 'profiles'))
   [IO.File]::WriteAllText((Join-Path $target 'mirrodex.ps1'),'# old'); [IO.File]::WriteAllText((Join-Path $target 'mirrodex.cfg'),'serial=MINE')
   [IO.File]::WriteAllText((Join-Path $target 'profiles\mine.cfg'),'mine')
-  [IO.File]::WriteAllText($sum,('0'*64)+'  Mirrodex-2.1.0.zip')
+  [IO.File]::WriteAllText($sum,('0'*64)+'  Mirrodex-9.1.0.zip')
   $failed=$false; try { Install-UpdatePackage $zip $sum $target } catch { $failed=$_.Exception.Message -like '*손상*' }
   Assert ($failed -and [IO.File]::ReadAllText((Join-Path $target 'mirrodex.ps1')) -eq '# old') 'checksum mismatch leaves the installed version untouched'
-  [IO.File]::WriteAllText($sum,(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()+'  Mirrodex-2.1.0.zip')
+  [IO.File]::WriteAllText($sum,(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()+'  Mirrodex-9.1.0.zip')
   Install-UpdatePackage $zip $sum $target
   Assert ([IO.File]::ReadAllText((Join-Path $target 'mirrodex.ps1')) -eq '# new' -and (Test-Path (Join-Path $target 'engine\part.dll'))) 'program files replaced'
   Assert ([IO.File]::ReadAllText((Join-Path $target 'mirrodex.cfg')) -eq 'serial=MINE' -and (Test-Path (Join-Path $target 'profiles\mine.cfg')) -and -not (Test-Path (Join-Path $target 'profiles\x.cfg'))) 'settings and device profiles survive the update'
