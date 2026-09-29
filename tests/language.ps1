@@ -56,6 +56,17 @@ try {
   $panel.MxLayout.Controls[0].Controls[2].PerformClick(); [Windows.Forms.Application]::DoEvents()
   Assert ($s.Source.Text -eq '바꾸기' -and $s.Source.AccessibleName -eq '보여줄 화면 바꾸기' -and $s.Draft.Text -eq '적용하지 않은 값 1개') 'the side menu, its screen-reader names and live counts switch language in place'
   Assert ($s.Fields.audio.SelectedItem -eq '노트북' -and (Get-SidebarConfig $s).audio -eq 'output') 'translated display keeps internal option values'
+  # Fonts: Windows UI faces in both languages (checked by English family name: Korean Windows reports '맑은 고딕'),
+  # and a missing face falls back to Malgun Gothic instead of failing to build any window.
+  $faces=@('Malgun Gothic','Segoe UI Variable Text','Segoe UI Variable Text Semibold','Segoe UI','Segoe UI Semibold')
+  foreach ($lang in 'ko','en') {
+    Set-UiLanguage $lang
+    $wrong=@(foreach ($role in $script:UiType.Keys) { $name=Get-UiFontName (New-UiFont $role); if ($name -notin $faces -or ($lang -eq 'ko' -and $name -ne 'Malgun Gothic')) { "$role=$name" } })
+    Assert ($wrong.Count -eq 0) "every text role uses a Windows UI face ($lang): $($wrong -join ', ')"
+  }
+  function Get-UiFontFace { @('No Such Face','Regular') }
+  $fallback=New-UiFont 'Title'
+  Assert ((Get-UiFontName $fallback) -eq 'Malgun Gothic' -and $fallback.Bold) 'a missing face falls back to Malgun Gothic instead of failing'
   Write-Output "PASS: $script:checks language checks ($($PSVersionTable.PSVersion))"
 } finally {
   if ($form) { $form.Dispose() }; if ($panel) { $panel.Dispose() }

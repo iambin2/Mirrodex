@@ -187,8 +187,9 @@ Screen recording (with sound)
 
 Appearance
   One design (ruled rows like a record card, 1 · 2 · 1 comparison discs, on/off lamps) applies to the
-  assistant, connection/error messages, comparison screens and the side menu. The font is Pretendard
-  when installed; otherwise Malgun Gothic for Korean and Segoe UI for English. Standard Windows window
+  assistant, connection/error messages, comparison screens and the side menu. Fonts are the Windows UI
+  fonts (Malgun Gothic for Korean, Segoe UI for English), drawn by Windows itself like Explorer, so
+  your ClearType settings apply. Standard Windows window
   frames, keyboard control (Enter = recommended answer, Esc = close), screen readers, high contrast
   and the 'Animation effects' setting are respected.
 

@@ -1,6 +1,6 @@
 ﻿. (Join-Path $PSScriptRoot 'mirrodex-lang.ps1')
 # Product identity: version checked by updates and written to Settings > Apps, repository, creator card.
-$script:AppVersion='2.1.0'; $script:UpdateRepo='iambin2/Mirrodex'; $script:Creator='iambin2'
+$script:AppVersion='2.1.1'; $script:UpdateRepo='iambin2/Mirrodex'; $script:Creator='iambin2'
 # Mirrodex design system (rules: DESIGN.md). One idea runs through every window: a ruled record of what is showing
 # now, and "1 or 2?" comparisons that change one thing at a time. Everything is drawn over native WinForms controls
 # so Windows keyboard, focus, screen-reader, DPI and high-contrast behavior is kept.
@@ -62,17 +62,19 @@ $script:UiType=@{
   Caption=@(9,''); Body=@(10,''); Label=@(10,'Medium'); Section=@(9,'SemiBold'); Headline=@(12,'SemiBold')
   Brand=@(11.5,'SemiBold'); Title=@(15,'SemiBold'); Numeral=@(11,'SemiBold')
 }
-# Pretendard when installed (one face for both languages). Otherwise the face that reads best per language:
-# Malgun Gothic for Korean, Segoe UI Variable for English (GDI+ fallback would space Hangul unevenly).
+# The Windows UI faces, hand-hinted for small screen text: Malgun Gothic for Korean, Segoe UI Variable (Segoe UI on
+# Windows 10) for English; Hangul inside English text falls back to Malgun Gothic like everywhere in Windows.
+# Web fonts such as Pretendard (.otf, CFF outlines) render grainy at 12-17px, so they are not used even if installed.
 $script:UiFonts=@{}
 function Test-UiFontFamily ($Name) {
   if (-not $script:UiFonts.ContainsKey($Name)) {
-    $font=New-Object Drawing.Font($Name,[float]10); $script:UiFonts[$Name]=($font.Name -eq $Name); $font.Dispose()
+    $font=New-Object Drawing.Font($Name,[float]10); $script:UiFonts[$Name]=(Get-UiFontName $font) -eq $Name; $font.Dispose()
   }
   return $script:UiFonts[$Name]
 }
+# English family name: on Korean Windows Font.Name says '맑은 고딕', and a missing face silently becomes another font.
+function Get-UiFontName ($Font) { $Font.FontFamily.GetName(1033) }
 function Get-UiFontFace ([string]$Weight) {
-  if (Test-UiFontFamily 'Pretendard') { return @(("Pretendard $Weight").Trim(),'Regular') }
   if ((Get-UiLanguage) -eq 'en') {
     $face=if (Test-UiFontFamily 'Segoe UI Variable Text') { 'Segoe UI Variable Text' } else { 'Segoe UI' }
     if ($Weight -eq 'SemiBold') { $face=if ($face -eq 'Segoe UI') { 'Segoe UI Semibold' } else { 'Segoe UI Variable Text Semibold' } }
@@ -84,8 +86,8 @@ function New-UiFont ($Role='Body') {
   $size,$weight=$script:UiType[$Role]
   $face,$style=Get-UiFontFace $weight
   $font=New-Object Drawing.Font($face,[float]$size,[Drawing.FontStyle]$style)
-  if ($font.Name -eq $face) { return $font }
-  $font.Dispose(); return New-Object Drawing.Font('Malgun Gothic',[float]$size,$(if ($weight -eq 'SemiBold') {'Bold'} else {'Regular'}))
+  if ((Get-UiFontName $font) -eq $face) { return $font }
+  $font.Dispose(); return New-Object Drawing.Font('Malgun Gothic',[float]$size,[Drawing.FontStyle]$(if ($weight -eq 'SemiBold') {'Bold'} else {'Regular'}))
 }
 # Remembers each font role so a language switch can re-apply the face that suits the new language.
 function Set-UiFont ($Control, [string]$Role, [string]$Property='Font') {
@@ -116,13 +118,14 @@ public static class MirrodexDwm {
 }
 // Colors come from the PowerShell tokens once per process; controls only ask for names.
 // Crisp pixels: GDI+ puts pixel centers on whole coordinates. Outlines therefore sit on whole coordinates (odd
-// pens) or half coordinates (even pens), fills cover whole pixels, pen widths are whole pixels and every line of
-// text starts on a whole pixel. A line drawn on x.5 smears into two half-gray pixels.
+// pens) or half coordinates (even pens), fills cover whole pixels and pen widths are whole pixels. A line drawn
+// on x.5 smears into two half-gray pixels.
+// Text is drawn by Windows itself (GDI, like Explorer and Settings): it follows the user's ClearType tuning
+// (Settings > ClearType Text Tuner) and the hinting of the Windows UI fonts. GDI+ text ignores both.
 public static class MxTheme {
  static readonly Dictionary<string, Color> map = new Dictionary<string, Color>();
  public static bool Motion = true;
- // ClearType with hinting when Windows uses ClearType, like native Windows apps; grayscale otherwise.
- public static TextRenderingHint Hint = TextRenderingHint.AntiAlias;
+ const TextFormatFlags Flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.PreserveGraphicsClipping | TextFormatFlags.PreserveGraphicsTranslateTransform;
  public static void Set(string name, Color c) { map[name] = c; }
  public static Color C(string name) { Color c; return map.TryGetValue(name, out c) ? c : Color.Magenta; }
  public static float S(Graphics g) { return g.DpiX / 96f; }
@@ -138,18 +141,18 @@ public static class MxTheme {
   p.AddArc(r.X, r.Y, d, d, 180, 90); p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
   p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90); p.AddArc(r.X, r.Bottom - d, d, d, 90, 90); p.CloseFigure(); return p;
  }
- public static StringFormat Line() {
-  var f = new StringFormat(StringFormat.GenericTypographic);
-  f.Trimming = StringTrimming.EllipsisCharacter; f.FormatFlags = StringFormatFlags.NoWrap; return f;
- }
- // One line of text, vertically centered in the box, starting on a whole pixel.
+ // Height of one rendered line in this font, as Windows lays it out.
+ public static float LineH(Graphics g, Font font) { return TextRenderer.MeasureText(g, "Ag\uD55C", font, new Size(int.MaxValue, int.MaxValue), Flags).Height; }
+ // One line of text, vertically centered in the box on a whole pixel; cut with an ellipsis if it does not fit.
  public static void Text(Graphics g, string text, Font font, Color color, RectangleF box, StringAlignment align) {
-  float h = font.GetHeight(g), top = Snap(box.Y + (box.Height - h) / 2);
-  using (var b = new SolidBrush(color)) using (var sf = Line()) { sf.Alignment = align; g.DrawString(text ?? "", font, b, new RectangleF(Snap(box.X), top, Math.Max(1, box.Width), h + 2), sf); }
+  float h = LineH(g, font), top = Snap(box.Y + (box.Height - h) / 2);
+  var f = Flags | TextFormatFlags.EndEllipsis | (align == StringAlignment.Center ? TextFormatFlags.HorizontalCenter : align == StringAlignment.Far ? TextFormatFlags.Right : TextFormatFlags.Left);
+  TextRenderer.DrawText(g, text ?? "", font, new Rectangle((int)Snap(box.X), (int)top, (int)Math.Max(1, Math.Floor(box.Width)), (int)Math.Ceiling(h) + 2), color, f);
  }
- public static float Width(Graphics g, string text, Font font) { return g.MeasureString(text ?? "", font, PointF.Empty, StringFormat.GenericTypographic).Width; }
- // Measuring uses the same text mode as painting, so wrapping and sizes agree.
- public static Graphics Measure() { var g = Graphics.FromHwnd(IntPtr.Zero); g.TextRenderingHint = Hint; return g; }
+ public static float Width(Graphics g, string text, Font font) { return string.IsNullOrEmpty(text) ? 0 : TextRenderer.MeasureText(g, text, font, new Size(int.MaxValue, int.MaxValue), Flags).Width; }
+ // GDI draws opaque colors only: a softer line on a filled shape is mixed toward the fill instead of made transparent.
+ public static Color Mix(Color a, Color b, float t) { return Color.FromArgb((int)(a.R * t + b.R * (1 - t)), (int)(a.G * t + b.G * (1 - t)), (int)(a.B * t + b.B * (1 - t))); }
+ public static Graphics Measure() { return Graphics.FromHwnd(IntPtr.Zero); }
 }
 // One drawn set on a 16-unit grid, 1.5-unit round strokes snapped to whole pixels. Filled only where the object is a dot.
 public static class MxIcons {
@@ -237,7 +240,6 @@ public static class MxIcons {
 // Wraps at spaces (Korean keep-all); only over-long tokens such as paths break per character.
 // An optional glyph sits in the icon column, the text in the text column.
 public class MirrodexLabel : Label {
- static readonly StringFormat Format = StringFormat.GenericTypographic;
  public string Glyph = ""; public Color GlyphColor = Color.Empty;
  public MirrodexLabel() { SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true); }
  float Reserve(Graphics g) { return string.IsNullOrEmpty(Glyph) ? 0 : MxTheme.Snap(26 * g.DpiX / 96f); }
@@ -247,10 +249,10 @@ public class MirrodexLabel : Label {
    string line = "";
    foreach (var word in para.Split(' ')) {
     string candidate = line.Length == 0 ? word : line + " " + word;
-    if (g.MeasureString(candidate, Font, PointF.Empty, Format).Width <= width) { line = candidate; continue; }
+    if (MxTheme.Width(g, candidate, Font) <= width) { line = candidate; continue; }
     if (line.Length > 0) { lines.Add(line); line = ""; }
     foreach (char ch in word) {
-     if (line.Length > 0 && g.MeasureString(line + ch, Font, PointF.Empty, Format).Width > width) { lines.Add(line); line = ""; }
+     if (line.Length > 0 && MxTheme.Width(g, line + ch, Font) > width) { lines.Add(line); line = ""; }
      line += ch;
     }
    }
@@ -265,19 +267,19 @@ public class MirrodexLabel : Label {
   if (!AutoSize) limit = Width;
   return limit == float.MaxValue ? limit : limit - Padding.Horizontal;
  }
- int Step(Graphics g) { return (int)Math.Ceiling(Font.GetHeight(g) * 1.18f); }
+ int Step(Graphics g) { return (int)Math.Ceiling(MxTheme.LineH(g, Font) * 1.1f); }
  public override Size GetPreferredSize(Size proposed) {
   using (var g = MxTheme.Measure()) {
    float reserve = Reserve(g), limit = LimitWidth(proposed);
    var lines = Wrap(g, limit == float.MaxValue ? limit : limit - reserve); float w = 0;
-   foreach (var l in lines) w = Math.Max(w, g.MeasureString(l, Font, PointF.Empty, Format).Width);
+   foreach (var l in lines) w = Math.Max(w, MxTheme.Width(g, l, Font));
    return new Size((int)Math.Ceiling(w + reserve) + 2 + Padding.Horizontal, lines.Count * Step(g) + Padding.Vertical);
   }
  }
  protected override void OnPaint(PaintEventArgs e) {
   var g = e.Graphics;
   g.Clear(Parent != null ? Parent.BackColor : BackColor);
-  g.TextRenderingHint = MxTheme.Hint;
+ 
   float reserve = Reserve(g), y = Padding.Top, x = Padding.Left + reserve; int step = Step(g);
   if (reserve > 0) {
    float size = Math.Min(MxTheme.Snap(16 * g.DpiX / 96f), step);
@@ -307,7 +309,7 @@ public static class MxPaint {
   bool hot = on && c.ClientRectangle.Contains(c.PointToClient(Cursor.Position));
   bool down = hot && Control.MouseButtons == MouseButtons.Left;
   g.Clear(c.Parent != null ? c.Parent.BackColor : MxTheme.C("Background"));
-  g.SmoothingMode = SmoothingMode.AntiAlias; g.TextRenderingHint = MxTheme.Hint;
+  g.SmoothingMode = SmoothingMode.AntiAlias;
   string fill = null, border = null;
   bool lit = v == "key" && on && lamp > 0 && !locked;
   if (Filled(v)) { string b = v == "danger" ? "Danger" : "Ink"; fill = !on ? "Disabled" : down ? b + "Down" : hot ? b + "Hover" : b; }
@@ -328,7 +330,7 @@ public static class MxPaint {
   if (border != null) using (var p = MxTheme.Round(MxTheme.Edge(ix, iy, bw, bh, 1), radius)) using (var pen = new Pen(MxTheme.C(border), 1)) g.DrawPath(pen, p);
   Color fg, sub;
   if (!on) fg = sub = MxTheme.C("DisabledText");
-  else if (Filled(v)) { fg = MxTheme.C(v == "danger" ? "OnDanger" : "OnInk"); sub = Color.FromArgb(205, fg); }
+  else if (Filled(v)) { fg = MxTheme.C(v == "danger" ? "OnDanger" : "OnInk"); sub = MxTheme.Mix(fg, MxTheme.C(fill), 0.8f); }
   else if (v == "link") fg = sub = MxTheme.C(hot ? "Text" : "Muted");
   else { fg = MxTheme.C("Text"); sub = MxTheme.C("Muted"); }
   // Focus ring after keyboard navigation: on the edge of outlined shapes, inset in filled ones so it never merges.
@@ -377,13 +379,13 @@ public static class MxPaint {
   float w = Math.Max(1, right - textX);
   if (parts[1].Length == 0) MxTheme.Text(g, parts[0], font, fg, new RectangleF(textX, 0, w, c.Height), StringAlignment.Near);
   else {
-   Font df = detailFont ?? font; float h1 = font.GetHeight(g), h2 = df.GetHeight(g), gap = MxTheme.Snap(2 * s);
+   Font df = detailFont ?? font; float h1 = MxTheme.LineH(g, font), h2 = MxTheme.LineH(g, df), gap = MxTheme.Snap(2 * s);
    float top = MxTheme.Snap((c.Height - (h1 + h2 + gap)) / 2);
    MxTheme.Text(g, parts[0], font, fg, new RectangleF(textX, top, w, h1), StringAlignment.Near);
    MxTheme.Text(g, parts[1], df, sub, new RectangleF(textX, MxTheme.Snap(top + h1 + gap), w, h2), StringAlignment.Near);
   }
   if (v == "link" && hot) {
-   float lw = Math.Min(MxTheme.Width(g, parts[0], font), w), ly = MxTheme.Snap((c.Height - font.GetHeight(g)) / 2) + MxTheme.Snap(font.GetHeight(g)) - 1;
+   float lw = Math.Min(MxTheme.Width(g, parts[0], font), w), ly = MxTheme.Snap((c.Height - MxTheme.LineH(g, font)) / 2) + MxTheme.Snap(MxTheme.LineH(g, font)) - 1;
    using (var pen = new Pen(fg, 1)) g.DrawLine(pen, textX, ly, textX + lw, ly);
   }
  }
@@ -435,14 +437,14 @@ public class MirrodexCheckBox : CheckBox {
  public override Size GetPreferredSize(Size proposed) {
   using (var g = MxTheme.Measure()) {
    float s = g.DpiX / 96f;
-   return new Size((int)Math.Ceiling(26 * s + MxTheme.Width(g, Text, Font)) + 4, (int)Math.Ceiling(Math.Max(24 * s, Font.GetHeight(g) + 8)));
+   return new Size((int)Math.Ceiling(26 * s + MxTheme.Width(g, Text, Font)) + 4, (int)Math.Ceiling(Math.Max(24 * s, MxTheme.LineH(g, Font) + 8)));
   }
  }
  protected override void OnCheckedChanged(EventArgs e) { base.OnCheckedChanged(e); Invalidate(); }
  protected override void OnPaint(PaintEventArgs e) {
   var g = e.Graphics; float s = MxTheme.S(g);
   g.Clear(Parent != null ? Parent.BackColor : BackColor);
-  g.SmoothingMode = SmoothingMode.AntiAlias; g.TextRenderingHint = MxTheme.Hint;
+  g.SmoothingMode = SmoothingMode.AntiAlias;
   float box = MxTheme.Snap(16 * s), y = (float)Math.Floor((Height - box) / 2), r = 4 * s; int pb = MxTheme.Px(1.2f * s);
   using (var path = MxTheme.Round(MxTheme.Cover(1, y, box, box), r + 0.5f)) using (var fill = new SolidBrush(Checked && Enabled ? MxTheme.C("Ink") : MxTheme.C("Surface"))) g.FillPath(fill, path);
   using (var path = MxTheme.Round(MxTheme.Edge(1, y, box, box, pb), r)) using (var pen = new Pen(Checked && Enabled ? MxTheme.C("Ink") : (Enabled ? MxTheme.C("Field") : MxTheme.C("DisabledText")), pb)) g.DrawPath(pen, path);
@@ -452,7 +454,7 @@ public class MirrodexCheckBox : CheckBox {
   }
   if (Checked) using (var pen = new Pen(Enabled ? MxTheme.C("OnInk") : MxTheme.C("DisabledText"), MxTheme.Px(2 * s)) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
    g.DrawLines(pen, new[] { new PointF(1 + 4 * s, y + 8.5f * s), new PointF(1 + 7 * s, y + 11.5f * s), new PointF(1 + 12 * s, y + 5 * s) });
-  float tx = MxTheme.Snap(26 * s), th = Font.GetHeight(g);
+  float tx = MxTheme.Snap(26 * s), th = MxTheme.LineH(g, Font);
   MxTheme.Text(g, Text, Font, Enabled ? MxTheme.C("Text") : MxTheme.C("DisabledText"), new RectangleF(tx, 0, Width - tx, Height), StringAlignment.Near);
   if (Changed) {
    float w = Math.Min(MxTheme.Width(g, Text, Font), Width - tx), ly = MxTheme.Snap((Height - th) / 2) + MxTheme.Snap(th);
@@ -478,12 +480,12 @@ public class MirrodexComboBox : ComboBox {
   var g = e.Graphics; float s = MxTheme.S(g);
   bool hot = Enabled && ClientRectangle.Contains(PointToClient(Cursor.Position)), ring = (Focused && ShowFocusCues) || DroppedDown;
   g.Clear(Parent != null ? Parent.BackColor : BackColor);
-  g.SmoothingMode = SmoothingMode.AntiAlias; g.TextRenderingHint = MxTheme.Hint;
+  g.SmoothingMode = SmoothingMode.AntiAlias;
   int pw = ring ? MxTheme.Px(2 * s) : 1; float r = 6 * s;
   using (var path = MxTheme.Round(MxTheme.Cover(0, 0, Width, Height), r + 0.5f)) using (var fill = new SolidBrush(!Enabled ? MxTheme.C("Disabled") : hot ? MxTheme.C("Hover") : MxTheme.C("Surface"))) g.FillPath(fill, path);
   using (var path = MxTheme.Round(MxTheme.Edge(0, 0, Width, Height, pw), r)) using (var pen = new Pen(ring ? MxTheme.C("Focus") : MxTheme.C("Field"), pw)) g.DrawPath(pen, path);
   string text = SelectedIndex >= 0 ? GetItemText(SelectedItem) : "";
-  float tx = MxTheme.Snap(10 * s), tw = Width - 36 * s, th = Font.GetHeight(g);
+  float tx = MxTheme.Snap(10 * s), tw = Width - 36 * s, th = MxTheme.LineH(g, Font);
   MxTheme.Text(g, text, Font, Enabled ? MxTheme.C("Text") : MxTheme.C("DisabledText"), new RectangleF(tx, 0, tw, Height), StringAlignment.Near);
   if (Changed) {
    float w = Math.Min(MxTheme.Width(g, text, Font), tw), ly = MxTheme.Snap((Height - th) / 2) + MxTheme.Snap(th);
@@ -496,7 +498,6 @@ public class MirrodexComboBox : ComboBox {
   if (e.Index < 0) return;
   bool sel = (e.State & DrawItemState.Selected) != 0;
   using (var bg = new SolidBrush(sel ? MxTheme.C("Selection") : MxTheme.C("Surface"))) e.Graphics.FillRectangle(bg, e.Bounds);
-  e.Graphics.TextRenderingHint = MxTheme.Hint;
   MxTheme.Text(e.Graphics, GetItemText(Items[e.Index]), Font, MxTheme.C("Text"), new RectangleF(e.Bounds.X + 8, e.Bounds.Y, e.Bounds.Width - 12, e.Bounds.Height), StringAlignment.Near);
  }
 }
@@ -512,7 +513,7 @@ public class MirrodexListBox : ListBox {
   using (var bg = new SolidBrush(selected ? MxTheme.C("Selection") : MxTheme.C("Surface"))) g.FillRectangle(bg, e.Bounds);
   float pad = MxTheme.Snap(12 * s);
   if (e.Index > 0) using (var pen = new Pen(MxTheme.C("Rule"), 1)) g.DrawLine(pen, e.Bounds.X + pad, e.Bounds.Y, e.Bounds.Right, e.Bounds.Y);
-  g.SmoothingMode = SmoothingMode.AntiAlias; g.TextRenderingHint = MxTheme.Hint;
+  g.SmoothingMode = SmoothingMode.AntiAlias;
   var parts = GetItemText(Items[e.Index]).Split('\t');
   float mid = e.Bounds.Y + e.Bounds.Height / 2f, cs = MxTheme.Snap(16 * s), right = e.Bounds.Width - pad - (selected ? cs + MxTheme.Snap(6 * s) : 0);
   if (selected) MxIcons.Draw(g, "check", new RectangleF(e.Bounds.Right - pad - cs, mid - cs / 2, cs, cs), MxTheme.C("Text"));
@@ -520,7 +521,7 @@ public class MirrodexListBox : ListBox {
    int fp = MxTheme.Px(1.5f * s), k = MxTheme.Px(1.5f * s);
    using (var ring = new Pen(MxTheme.C("Focus"), fp)) using (var p = MxTheme.Round(MxTheme.Edge(e.Bounds.X + k, e.Bounds.Y + k, e.Bounds.Width - 2 * k, e.Bounds.Height - 2 * k, fp), 4 * s)) g.DrawPath(ring, p);
   }
-  float h = Font.GetHeight(g), dh = (DetailFont ?? Font).GetHeight(g);
+  float h = MxTheme.LineH(g, Font), dh = MxTheme.LineH(g, DetailFont ?? Font);
   if (parts.Length > 1) {
    MxTheme.Text(g, parts[0], Font, MxTheme.C("Text"), new RectangleF(e.Bounds.X + pad, MxTheme.Snap(mid - h - s), right - pad, h), StringAlignment.Near);
    MxTheme.Text(g, parts[1], DetailFont ?? Font, MxTheme.C("Muted"), new RectangleF(e.Bounds.X + pad, MxTheme.Snap(mid + s), right - pad, dh), StringAlignment.Near);
@@ -548,13 +549,13 @@ public class MxChip : Control {
  public override Size GetPreferredSize(Size proposed) {
   using (var g = MxTheme.Measure()) {
    float s = g.DpiX / 96f, w = MxTheme.Width(g, Text, Font);
-   return new Size((int)Math.Ceiling(26 * s + w + 10 * s), (int)Math.Ceiling(Math.Max(22 * s, Font.GetHeight(g) + 8 * s)));
+   return new Size((int)Math.Ceiling(26 * s + w + 10 * s), (int)Math.Ceiling(Math.Max(22 * s, MxTheme.LineH(g, Font) + 8 * s)));
   }
  }
  protected override void OnPaint(PaintEventArgs e) {
   var g = e.Graphics; float s = MxTheme.S(g);
   g.Clear(Parent != null ? Parent.BackColor : MxTheme.C("Surface"));
-  g.SmoothingMode = SmoothingMode.AntiAlias; g.TextRenderingHint = MxTheme.Hint;
+  g.SmoothingMode = SmoothingMode.AntiAlias;
   string tint = Tone == "rec" ? "RecTint" : Tone == "lamp" ? "LampTint" : "Background";
   Color mark = MxTheme.C(Tone == "rec" ? "Rec" : Tone == "lamp" ? "Lamp" : Tone == "success" ? "Success" : "Muted");
   using (var p = MxTheme.Round(MxTheme.Cover(0, 0, Width, Height), Height / 2f)) using (var b = new SolidBrush(MxTheme.C(tint))) g.FillPath(b, p);
@@ -577,16 +578,16 @@ public class MxLensTrack : Control {
  Font Cap { get { return CaptionFont ?? Font; } }
  public override Size GetPreferredSize(Size proposed) {
   using (var g = MxTheme.Measure()) {
-   float s = g.DpiX / 96f, h = 0, ch = Cap.GetHeight(g);
+   float s = g.DpiX / 96f, h = 0, ch = MxTheme.LineH(g, Cap);
    if (Numbers.Length > 0) h += 30 * s + 6 * s + ch;
    if (Remaining >= 0) h += (h > 0 ? 14 * s : 0) + 4 * s + 6 * s + ch;
    return new Size(proposed.Width > 1 && proposed.Width < 100000 ? proposed.Width : Width, (int)Math.Ceiling(h + 2 * s));
   }
  }
  protected override void OnPaint(PaintEventArgs e) {
-  var g = e.Graphics; float s = MxTheme.S(g), y = 0, ch = Cap.GetHeight(g);
+  var g = e.Graphics; float s = MxTheme.S(g), y = 0, ch = MxTheme.LineH(g, Cap);
   g.Clear(Parent != null ? Parent.BackColor : MxTheme.C("Background"));
-  g.SmoothingMode = SmoothingMode.AntiAlias; g.TextRenderingHint = MxTheme.Hint;
+  g.SmoothingMode = SmoothingMode.AntiAlias;
   int n = Numbers.Length;
   if (n > 0) {
    float slot = Width / (float)n, d = MxTheme.Snap(30 * s); int lp = MxTheme.Px(1.5f * s); float ly = MxTheme.Snap(d / 2) + (lp % 2 == 0 ? 0.5f : 0);
@@ -630,9 +631,6 @@ function Initialize-UiTheme {
   if ($script:UiThemeApplied -eq (Get-UiTheme)) { return }
   foreach ($name in $script:UiPalette[(Get-UiTheme)].Keys) { [MxTheme]::Set($name,(Get-UiColor $name)) }
   [MxTheme]::Motion=[MirrodexDwm]::Animations()
-  # Text like native Windows apps: ClearType with hinting when Windows uses ClearType, grayscale otherwise.
-  $clearType=[Windows.Forms.SystemInformation]::IsFontSmoothingEnabled -and [Windows.Forms.SystemInformation]::FontSmoothingType -eq 2
-  [MxTheme]::Hint=if ($clearType) { [Drawing.Text.TextRenderingHint]::ClearTypeGridFit } else { [Drawing.Text.TextRenderingHint]::AntiAlias }
   $script:UiThemeApplied=Get-UiTheme
 }
 

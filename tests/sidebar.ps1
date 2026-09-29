@@ -23,8 +23,7 @@ try {
     $cut=@(foreach ($key in @($fs.Record,$fs.Screenshot,$fs.OnTop,$fs.Lock)) {
       $room=$key.Width-$(if ($key -is [MxToggle] -or $key.Lamp -ge 0 -or $key.Reconnects) {66} else {50})*$px
       $parts=[MxPaint]::Split($key.Text)
-      if ($g.MeasureString($parts[0],$key.Font,[Drawing.PointF]::Empty,[Drawing.StringFormat]::GenericTypographic).Width -gt $room -or
-          $g.MeasureString($parts[1],$key.DetailFont,[Drawing.PointF]::Empty,[Drawing.StringFormat]::GenericTypographic).Width -gt $room) { $key.Text }
+      if ([MxTheme]::Width($g,$parts[0],$key.Font) -gt $room -or [MxTheme]::Width($g,$parts[1],$key.DetailFont) -gt $room) { $key.Text }
     })
     Assert ($cut.Count -eq 0) "key labels fit without truncation ($lang): $($cut -join ', ')"
     $g.Dispose()

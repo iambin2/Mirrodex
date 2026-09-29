@@ -44,36 +44,36 @@ colors:
   danger-dark: "#F08A7E"
 typography:
   title:
-    fontFamily: "Pretendard, Malgun Gothic, Segoe UI Variable Text"
+    fontFamily: "Malgun Gothic, Segoe UI Variable Text, Segoe UI"
     fontSize: "15pt"
     fontWeight: 600
   headline:
-    fontFamily: "Pretendard, Malgun Gothic, Segoe UI Variable Text"
+    fontFamily: "Malgun Gothic, Segoe UI Variable Text, Segoe UI"
     fontSize: "12pt"
     fontWeight: 600
   brand:
-    fontFamily: "Pretendard, Malgun Gothic, Segoe UI Variable Text"
+    fontFamily: "Malgun Gothic, Segoe UI Variable Text, Segoe UI"
     fontSize: "11.5pt"
     fontWeight: 600
   numeral:
-    fontFamily: "Pretendard, Malgun Gothic, Segoe UI Variable Text"
+    fontFamily: "Malgun Gothic, Segoe UI Variable Text, Segoe UI"
     fontSize: "11pt"
     fontWeight: 600
   body:
-    fontFamily: "Pretendard, Malgun Gothic, Segoe UI Variable Text"
+    fontFamily: "Malgun Gothic, Segoe UI Variable Text, Segoe UI"
     fontSize: "10pt"
     fontWeight: 400
     lineHeight: 1.18
   label:
-    fontFamily: "Pretendard, Malgun Gothic, Segoe UI Variable Text"
+    fontFamily: "Malgun Gothic, Segoe UI Variable Text, Segoe UI"
     fontSize: "10pt"
     fontWeight: 500
   section:
-    fontFamily: "Pretendard, Malgun Gothic, Segoe UI Variable Text"
+    fontFamily: "Malgun Gothic, Segoe UI Variable Text, Segoe UI"
     fontSize: "9pt"
     fontWeight: 600
   caption:
-    fontFamily: "Pretendard, Malgun Gothic, Segoe UI Variable Text"
+    fontFamily: "Malgun Gothic, Segoe UI Variable Text, Segoe UI"
     fontSize: "9pt"
     fontWeight: 400
 rounded:
@@ -194,9 +194,11 @@ Windows 설정을 따른다: 고대비가 켜져 있으면 Windows 고대비 색
 
 ## Typography
 
-한 글꼴, 굵기로 위계. Pretendard가 있으면 두 언어 모두 Pretendard. 없으면 한국어는 맑은 고딕, 영어는 Segoe UI Variable(Windows 10은 Segoe UI) — GDI+ 대체 글꼴이 한글 간격을 벌리기 때문이다. 언어를 바꾸면 열린 창의 글꼴도 다시 적용한다. 한글은 띄어쓰기 단위 줄바꿈.
+Windows UI 글꼴, 굵기로 위계. 한국어는 맑은 고딕, 영어는 Segoe UI Variable(Windows 10은 Segoe UI). 영어 글 속의 한글은 Windows가 맑은 고딕으로 대체한다. 둘 다 작은 화면 글씨용 수작업 힌팅이 된 TrueType이다. Pretendard 같은 웹 글꼴(.otf, CFF 곡선)은 12~17px에서 획이 고르지 않아 설치돼 있어도 쓰지 않는다. 언어를 바꾸면 열린 창의 글꼴도 다시 적용한다. 한글은 띄어쓰기 단위 줄바꿈.
 
-글자는 Windows가 ClearType을 쓰면 ClearType + 힌팅(Windows 기본 앱과 같은 방식), ClearType을 끈 PC에서는 회색조로 그린다(`MxTheme.Hint`). 힌팅 없는 회색조는 획이 픽셀 사이에 걸쳐 거칠게 보인다. 줄마다 시작 위치를 정수 픽셀에 맞추고, 크기 측정도 그리기와 같은 방식으로 한다(`MxTheme.Measure`).
+글꼴 확인은 영어 이름으로 한다(`Get-UiFontName`): 한국어 Windows는 `Font.Name`을 '맑은 고딕'으로 돌려준다. 원하는 글꼴이 없으면 맑은 고딕으로 대체하며, 대체 때문에 창 생성이 실패하지 않는다(`tests/language.ps1`).
+
+글자는 Windows가 직접 그린다(GDI `TextRenderer`, 탐색기·설정 창과 같은 방식). 사용자가 ClearType 텍스트 조정기로 맞춘 대비·서브픽셀 방향을 그대로 따르고, ClearType을 끈 PC에서는 회색조가 된다. GDI+ 글자(`DrawString`)는 이 설정을 무시하고 힌팅이 약해 쓰지 않는다. 줄마다 시작 위치를 정수 픽셀에 맞추고, 줄 높이와 폭 측정도 같은 방식으로 한다(`MxTheme.LineH`, `MxTheme.Width`). GDI는 투명도를 쓰지 않으므로 채운 모양 위의 흐린 글자는 색을 섞어 만든다(`MxTheme.Mix`).
 
 | 역할 | 크기 | 굵기 | 쓰임 |
 |---|---|---|---|
