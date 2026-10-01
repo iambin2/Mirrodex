@@ -29,6 +29,13 @@ try {
     $g.Dispose()
     if ($lang -eq 'ko') { $folded.Dispose() }
   }
+  # Text sizes are measured once and remembered: the remembered size must equal a fresh measurement, font by font.
+  $g=[MxTheme]::Measure(); $flags=[Windows.Forms.TextFormatFlags]'NoPadding,NoPrefix,SingleLine,PreserveGraphicsClipping,PreserveGraphicsTranslateTransform'
+  $stale=@(foreach ($font in $fs.Record.Font,$fs.Record.DetailFont,$fs.Guide.Font) { foreach ($text in 'Mirrodex','화면 녹화 시작','Mirrodex') {
+    if ([MxTheme]::Width($g,$text,$font) -ne [Windows.Forms.TextRenderer]::MeasureText($g,$text,$font,(New-Object Drawing.Size([int]::MaxValue,[int]::MaxValue)),$flags).Width) { "$text / $($font.Name) $($font.Size)" }
+  } })
+  $g.Dispose()
+  Assert ($stale.Count -eq 0) "remembered text sizes equal fresh measurements: $($stale -join ', ')"
   $fs.Expand.PerformClick(); [Windows.Forms.Application]::DoEvents()
   Assert ($fs.Settings.Visible -and $script:SidebarExpanded -and $folded.ClientSize.Height -gt 300) 'expanding shows settings and remembers it for the next reconnection'
   $env:ADB=Join-Path $testRoot 'missing-adb.exe'

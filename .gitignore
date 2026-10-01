@@ -9,6 +9,8 @@ refresh-recovery.cfg
 refresh-repair.cfg
 profiles/
 diagnostics/
+# Compiled controls, rebuilt whenever the source changes
+cache/
 # Local backups and release output
 backup-*/
 dist/

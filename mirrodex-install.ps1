@@ -1,9 +1,10 @@
 ﻿# Per-user install without administrator rights: %LOCALAPPDATA%\Programs\Mirrodex, Start menu and desktop
 # shortcuts, and an entry in Settings > Apps so Mirrodex is removed like any other app.
-# Files that belong to this PC (settings, device profiles with the phone serial). An update never replaces them
-# and a release package never contains them; installing from an existing folder carries them over.
+# Files that belong to this PC (settings, device profiles with the phone serial, the compiled-controls cache). An
+# update never replaces them and a release package never contains them; installing from an existing folder carries
+# them over.
 $script:UserDataNames = @('mirrodex.cfg','mirrodex.cfg.bak','mirrodex.regression.cfg','preferences.cfg','language.cfg',
-  'current-context.cfg','refresh-recovery.cfg','refresh-repair.cfg','profiles','diagnostics')
+  'current-context.cfg','refresh-recovery.cfg','refresh-repair.cfg','profiles','diagnostics','cache')
 function Get-InstallPaths {
   @{
     Dir=Join-Path $env:LOCALAPPDATA 'Programs\Mirrodex'

@@ -90,8 +90,21 @@ try {
     }
   })
   $clickTimer.Start()
+  # The picture comes first: by the time the side menu is built, the engine process is already running.
+  Remove-Item -LiteralPath "$testRoot/engine-started"
+  $realSidebar=${function:New-Sidebar}
+  function New-Sidebar ($Config,$Device) {
+    $menu=& $realSidebar $Config $Device
+    for ($i=0; $i -lt 30 -and -not (Test-Path "$testRoot/engine-started"); $i++) { Start-Sleep -Milliseconds 100 }
+    $script:engineFirst=Test-Path "$testRoot/engine-started"
+    return $menu
+  }
   try { $result=Invoke-MirrorProcess $scrcpy @() } finally { $clickTimer.Dispose(); $script:SidebarEnabled=$false }
+  Assert $script:engineFirst 'the engine starts before the side menu is built'
   Assert ($result.Request.Config.size -eq '1920' -and -not $result.Canceled) 'live sidebar click returns reconfiguration request from actual process loop'
+  [IO.File]::WriteAllText("$testRoot/stream-mode",'unknown')
+  $script:SidebarEnabled=$true; $result=Invoke-MirrorProcess $scrcpy @(); $script:SidebarEnabled=$false
+  Assert ($result.Code -eq 3 -and @([Windows.Forms.Application]::OpenForms).Count -eq 0) 'an engine that fails at once leaves no side menu behind'
   Assert (@([Windows.Forms.Application]::OpenForms).Count -eq 0) 'session cleanup disposes sidebar and trial forms'
   Assert ($script:prompts.Count -eq 0) 'all planned scenario choices consumed'
   Write-Output "PASS: $script:count scenario checks ($($PSVersionTable.PSVersion))"

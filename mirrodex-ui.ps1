@@ -99,7 +99,7 @@ function New-UiPadding ([int]$Left=0,[int]$Top=0,[int]$Right=0,[int]$Bottom=0) {
 # ---- Native controls ---------------------------------------------------------------------------------
 function Initialize-UiNative {
   if ('MxButton' -as [type]) { return }
-  Add-Type -ReferencedAssemblies System.Windows.Forms,System.Drawing -TypeDefinition @'
+  $source=@'
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -116,6 +116,17 @@ public static class MirrodexDwm {
  // Settings > Accessibility > Visual effects > Animation effects (SPI_GETCLIENTAREAANIMATION).
  public static bool Animations() { int on = 1; try { SystemParametersInfo(0x1042, 0, ref on, 0); } catch { } return on != 0; }
 }
+// The mirror window belongs to the engine process; the session loop reads its place and sets its title and z-order.
+// Compiled here with the controls, so a start pays for one compilation, not two.
+public static class MirrodexWindow {
+ [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left,Top,Right,Bottom; }
+ [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out Rect r);
+ [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out Rect r);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern bool SetWindowText(IntPtr h,string s);
+ [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+}
+// The side menu appears beside a mirror that is already on screen; it must not take the keyboard from it.
+public class MxQuietForm : Form { protected override bool ShowWithoutActivation { get { return true; } } }
 // Colors come from the PowerShell tokens once per process; controls only ask for names.
 // Crisp pixels: GDI+ puts pixel centers on whole coordinates. Outlines therefore sit on whole coordinates (odd
 // pens) or half coordinates (even pens), fills cover whole pixels and pen widths are whole pixels. A line drawn
@@ -141,15 +152,25 @@ public static class MxTheme {
   p.AddArc(r.X, r.Y, d, d, 180, 90); p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
   p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90); p.AddArc(r.X, r.Bottom - d, d, d, 90, 90); p.CloseFigure(); return p;
  }
+ // Layout asks every control for its size again and again: building and showing one side menu measured text about
+ // 59,000 times (3.5 s). One text in one font always measures the same, so each is measured once and remembered.
+ // Fonts compare by family, size and style; the caps only bound texts that keep changing (clock, countdown, paths).
+ static readonly Dictionary<Font, Dictionary<string, Size>> measured = new Dictionary<Font, Dictionary<string, Size>>();
+ static Size Extent(Graphics g, string text, Font font) {
+  Dictionary<string, Size> byText; Size size;
+  if (!measured.TryGetValue(font, out byText)) { if (measured.Count > 256) measured.Clear(); measured[font] = byText = new Dictionary<string, Size>(); }
+  if (!byText.TryGetValue(text, out size)) { if (byText.Count > 4096) byText.Clear(); byText[text] = size = TextRenderer.MeasureText(g, text, font, new Size(int.MaxValue, int.MaxValue), Flags); }
+  return size;
+ }
  // Height of one rendered line in this font, as Windows lays it out.
- public static float LineH(Graphics g, Font font) { return TextRenderer.MeasureText(g, "Ag\uD55C", font, new Size(int.MaxValue, int.MaxValue), Flags).Height; }
+ public static float LineH(Graphics g, Font font) { return Extent(g, "Ag\uD55C", font).Height; }
  // One line of text, vertically centered in the box on a whole pixel; cut with an ellipsis if it does not fit.
  public static void Text(Graphics g, string text, Font font, Color color, RectangleF box, StringAlignment align) {
   float h = LineH(g, font), top = Snap(box.Y + (box.Height - h) / 2);
   var f = Flags | TextFormatFlags.EndEllipsis | (align == StringAlignment.Center ? TextFormatFlags.HorizontalCenter : align == StringAlignment.Far ? TextFormatFlags.Right : TextFormatFlags.Left);
   TextRenderer.DrawText(g, text ?? "", font, new Rectangle((int)Snap(box.X), (int)top, (int)Math.Max(1, Math.Floor(box.Width)), (int)Math.Ceiling(h) + 2), color, f);
  }
- public static float Width(Graphics g, string text, Font font) { return string.IsNullOrEmpty(text) ? 0 : TextRenderer.MeasureText(g, text, font, new Size(int.MaxValue, int.MaxValue), Flags).Width; }
+ public static float Width(Graphics g, string text, Font font) { return string.IsNullOrEmpty(text) ? 0 : Extent(g, text, font).Width; }
  // GDI draws opaque colors only: a softer line on a filled shape is mixed toward the fill instead of made transparent.
  public static Color Mix(Color a, Color b, float t) { return Color.FromArgb((int)(a.R * t + b.R * (1 - t)), (int)(a.G * t + b.G * (1 - t)), (int)(a.B * t + b.B * (1 - t))); }
  public static Graphics Measure() { return Graphics.FromHwnd(IntPtr.Zero); }
@@ -617,6 +638,25 @@ public class MxLensTrack : Control {
  }
 }
 '@
+  # Compiling the controls costs about 0.35 s of every start, so the compiled file is kept in cache\ and loaded from
+  # there (about 0.07 s). Its name is a hash of this source and the PowerShell version: after an update the source
+  # differs, so it compiles again and the earlier file is removed. A folder that cannot be written, or a file that
+  # cannot be loaded, falls back to compiling in memory as before.
+  $sha=[Security.Cryptography.SHA256]::Create()
+  try { $hash=[BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes("$($PSVersionTable.PSVersion) $source"))).Replace('-','').Substring(0,16) }
+  finally { $sha.Dispose() }
+  $dll=Join-Path $PSScriptRoot "cache\ui-$hash.dll"
+  try {
+    if (-not (Test-Path -LiteralPath $dll)) {
+      [void][IO.Directory]::CreateDirectory((Split-Path $dll))
+      Get-ChildItem -LiteralPath (Split-Path $dll) -Filter 'ui-*.dll' | Remove-Item -Force -ErrorAction SilentlyContinue
+      # Written under this process's own name first: another Mirrodex window may be starting at the same moment.
+      $own=Join-Path (Split-Path $dll) "ui-$hash.$PID.dll"
+      Add-Type -ReferencedAssemblies System.Windows.Forms,System.Drawing -TypeDefinition $source -OutputAssembly $own
+      try { [IO.File]::Move($own,$dll) } catch { [IO.File]::Delete($own) }
+    }
+    Add-Type -Path $dll
+  } catch { Add-Type -ReferencedAssemblies System.Windows.Forms,System.Drawing -TypeDefinition $source }
 }
 function Set-UiNativeTheme ($Control, [string]$Class='DarkMode_Explorer') {
   # Dark scrollbars and list chrome come from the system dark theme class; light and high contrast use the default.
@@ -938,7 +978,7 @@ function Test-ConfigSaved ($Config) {
 function New-Sidebar ($Config, $Device) {
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
-  $form=New-Object Windows.Forms.Form
+  $form=New-Object MxQuietForm
   Set-UiText $form 'Mirrodex 설정 · 방송에 공유하지 않는 창'
   $form | Add-Member -NotePropertyName MxSidebar -NotePropertyValue $true
   $form.StartPosition='Manual'; $form.MaximizeBox=$false

@@ -13,9 +13,8 @@ $script:GuideMode = $false
 function Say ($Text, $Color = 'Gray') { Write-Host (T $Text) -ForegroundColor $Color }
 function Head ($Text) { Say "`n  $Text" Cyan; Say ('  ' + '-' * 52) DarkGray }
 
-# Redirect both streams asynchronously: no PS 5.1 NativeCommandError and no pipe deadlock.
-# Only short diagnostic commands use this helper; interactive mirroring streams directly.
-function Invoke-Tool ($File, [string[]]$Arguments, [int]$Timeout = 15000) {
+# Every engine and adb process is prepared here: each argument quoted, no console window, both streams redirected.
+function New-ToolProcess ($File, [string[]]$Arguments) {
   $quoted = foreach ($arg in $Arguments) {
     '"' + [regex]::Replace([regex]::Replace($arg, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1') + '"'
   }
@@ -28,6 +27,13 @@ function Invoke-Tool ($File, [string[]]$Arguments, [int]$Timeout = 15000) {
   $info.RedirectStandardError = $true
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $info
+  return $process
+}
+
+# Redirect both streams asynchronously: no PS 5.1 NativeCommandError and no pipe deadlock.
+# Only short diagnostic commands use this helper; interactive mirroring streams directly.
+function Invoke-Tool ($File, [string[]]$Arguments, [int]$Timeout = 15000) {
+  $process = New-ToolProcess $File $Arguments
   try {
     if (-not $process.Start()) { throw "$File 실행 실패" }
     $stdout = $process.StandardOutput.ReadToEndAsync()
@@ -152,17 +158,37 @@ function Get-Encoder ($Text, $Codec) {
   return ''
 }
 
-function Inspect-Device ($Adb, $Scrcpy, $Serial) {
-  $result = Invoke-Tool $Adb @('-s',$Serial,'shell','getprop ro.product.model; wm size')
+# Listing encoders starts the engine on the phone (about 0.5 s, over 1 s right after plugging in). The list changes
+# only with the phone's system software or the bundled engine, so its encoder lines are kept per build fingerprint
+# and Mirrodex version in profiles\. -Fresh asks the phone again: for diagnostics and after an encoder failed.
+function Inspect-Device ($Adb, $Scrcpy, $Serial, [switch]$Fresh) {
+  $result = Invoke-Tool $Adb @('-s',$Serial,'shell','getprop ro.product.model; echo fp=$(getprop ro.build.fingerprint); wm size')
   if ($result.Code -ne 0) { throw "기기 검사 실패: $($result.Text)" }
   $lines = $result.Text -split '\r?\n'
   $sizes = [regex]::Matches($result.Text, '(?:Physical|Override) size:\s*(\d+)x(\d+)')
   if (-not $sizes.Count) { throw '기기 해상도를 읽지 못했습니다.' }
   $size = $sizes[$sizes.Count-1] # wm override wins over physical size
   $a = [int]$size.Groups[1].Value; $b = [int]$size.Groups[2].Value
-  $encoders = Invoke-Tool $Scrcpy @("--serial=$Serial",'--list-encoders') 30000
-  if ($encoders.Code -ne 0) { throw "인코더 검사 실패: $($encoders.Text)" }
-  return @{ Model=$lines[0]; Long=[Math]::Max($a,$b); Short=[Math]::Min($a,$b); Encoders=$encoders.Text }
+  $fingerprint = [regex]::Match($result.Text, '(?m)^fp=(\S+)').Groups[1].Value
+  $stamp = "$script:AppVersion $fingerprint"; $list = ''
+  $cache = if ($fingerprint) { Join-Path $Root ('profiles\encoders-' + ($fingerprint -replace '[^A-Za-z0-9._-]', '_') + '.txt') }
+  if ($cache -and -not $Fresh) {
+    try { $saved = [IO.File]::ReadAllLines($cache); if ($saved[0] -ceq $stamp) { $list = ($saved | Select-Object -Skip 1) -join "`n" } } catch { }
+  }
+  if (-not $list) {
+    $encoders = Invoke-Tool $Scrcpy @("--serial=$Serial",'--list-encoders') 30000
+    if ($encoders.Code -ne 0) { throw "인코더 검사 실패: $($encoders.Text)" }
+    $list = $encoders.Text
+    # Only the encoder lines are kept: the engine's other output names the phone's serial number.
+    $kept = @($list -split '\r?\n' | Where-Object { $_ -match '--(video|audio)-codec=' })
+    if ($cache -and $kept.Count) {
+      try {
+        [void][IO.Directory]::CreateDirectory((Split-Path $cache))
+        [IO.File]::WriteAllLines("$cache.tmp", [string[]](@($stamp) + $kept)); [IO.File]::Delete($cache); [IO.File]::Move("$cache.tmp", $cache)
+      } catch { }
+    }
+  }
+  return @{ Model=$lines[0]; Long=[Math]::Max($a,$b); Short=[Math]::Min($a,$b); Encoders=$list }
 }
 
 function Get-StartingConfig ($Device, $Serial, $Environment) {
@@ -393,10 +419,9 @@ function Start-Mirror ($Scrcpy, $Adb, $Config, $Serial, [int]$TrialSeconds = 0) 
 }
 
 function New-DesktopShortcut {
-  $shell = New-Object -ComObject WScript.Shell
   $path=Join-Path ([Environment]::GetFolderPath('Desktop')) 'Mirrodex.lnk'
   if (Test-Path -LiteralPath $path) { return }
-  $shortcut = $shell.CreateShortcut($path)
+  $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($path)
   $shortcut.TargetPath = Join-Path $Root 'Mirrodex.bat'
   $shortcut.WorkingDirectory = $Root
   $shortcut.WindowStyle = 7
@@ -435,7 +460,7 @@ function Main {
     }
     if ($Mode -eq 'diagnose') {
       $version = Invoke-Tool $scrcpy @('--version')
-      $device = Inspect-Device $adb $scrcpy $serial
+      $device = Inspect-Device $adb $scrcpy $serial -Fresh
       Say $version.Text; Say "$($device.Model): $($device.Short)x$($device.Long)"; Say $device.Encoders
       if ($config) { Say ((Get-MirrorOptions $config $serial) -join ' ') }
       return
@@ -449,18 +474,17 @@ function Main {
       [void][IO.Directory]::CreateDirectory($script:Context.Directory)
       if (Test-Path -LiteralPath $Cfg) { try { $config = Import-Config $Cfg } catch { $config = $null } }
     } else { $config=Select-Environment $config $serial }
+    # Asked once per start: every path below needs it, and listing encoders starts the engine on the phone.
+    $device=Inspect-Device $adb $scrcpy $serial
     if ($script:GuideMode) {
-      $device=Inspect-Device $adb $scrcpy $serial
       $config=Invoke-Guide $scrcpy $adb $config $device $serial
       New-DesktopShortcut
     } elseif ($Mode -in @('run','add') -and (-not $config -or ($config.serial -and $config.serial -ne $serial))) {
-      $device=Inspect-Device $adb $scrcpy $serial
       $config=Get-QuickStartConfig $device $serial
       Save-Config $config
       if (-not $script:SecondaryDevice) { New-DesktopShortcut }
       Say '  설정 저장 완료. 다음부터 바로 실행합니다.' Green
     } elseif ($Mode -eq 'setup' -or -not $config -or $config.serial -ne $serial) {
-      $device = Inspect-Device $adb $scrcpy $serial
       if ($config -and -not $config.serial -and $Mode -ne 'setup') {
         # Keep legacy preferences, but discard an encoder not present on this device.
         $config.serial = $serial
@@ -470,12 +494,9 @@ function Main {
       New-DesktopShortcut
       Say '  설정 저장 완료. 다음부터 바로 실행합니다.' Green
     }
-    if ($Mode -eq 'tune') {
-      $device = Inspect-Device $adb $scrcpy $serial
-      $config = Invoke-Tuning $scrcpy $adb $config $device $serial
-    }
+    if ($Mode -eq 'tune') { $config = Invoke-Tuning $scrcpy $adb $config $device $serial }
     if ($config) {
-      $script:PanelDevice=Inspect-Device $adb $scrcpy $serial
+      $script:PanelDevice=$device
       $script:SidebarEnabled=$true
       Start-ResilientMirror $scrcpy $adb $config $serial
     }

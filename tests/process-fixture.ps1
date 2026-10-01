@@ -14,6 +14,7 @@ if ($Tool -eq 'adb') {
 }
 if ($command -like '*--list-encoders*') { [Console]::WriteLine("--video-codec=h264 --video-encoder=fixture.avc (hw)`n--video-codec=h265 --video-encoder=fixture.hevc (hw)"); exit 0 }
 $mode=[IO.File]::ReadAllText((Join-Path $root 'stream-mode')).Trim()
+[IO.File]::WriteAllText((Join-Path $root 'engine-started'),'1')
 if ($mode -eq 'disconnect') { [IO.File]::WriteAllText((Join-Path $root 'device-state'),'offline'); [Console]::Error.WriteLine('device disconnected'); exit 2 }
 if ($mode -eq 'encoder' -and $command -like '*fixture.avc*') { [Console]::Error.WriteLine('Failed to create video encoder'); exit 1 }
 if ($mode -eq 'unknown') { [Console]::Error.WriteLine('unexpected failure TEST private-clipboard'); exit 3 }
@@ -21,7 +22,8 @@ if ($mode -eq 'wait') { Start-Sleep -Seconds 1 }
 if ($mode -eq 'window') {
   Add-Type -AssemblyName System.Windows.Forms
   $window=New-Object Windows.Forms.Form; $window.Text='Mirrodex fixture'
-  $clock=New-Object Windows.Forms.Timer; $clock.Interval=1200
+  # Long enough for the side menu, which is built after the engine has started, to appear beside this window.
+  $clock=New-Object Windows.Forms.Timer; $clock.Interval=5000
   $clock.Add_Tick({ $window.Close() }); $clock.Start()
   try { [void]$window.ShowDialog() } finally { $clock.Dispose(); $window.Dispose() }
 }

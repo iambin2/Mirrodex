@@ -83,7 +83,6 @@ try {
   $script:UiPreferences=$null
   Assert ((Get-UiPreference 'ontop' '0') -eq '1') 'always-on-top choice persists'
   Add-Type -Name WinStyle -Namespace MxTest -MemberDefinition '[DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int i);'
-  Initialize-WindowApi
   $window=New-Object Windows.Forms.Form; $window.Show()
   try {
     Update-MirrorTopmost $window.Handle
@@ -91,6 +90,19 @@ try {
     Set-AlwaysOnTop $false; Update-MirrorTopmost $window.Handle
     Assert (([MxTest.WinStyle]::GetWindowLong($window.Handle,-20) -band 8) -eq 0) 'turning it off releases topmost'
   } finally { $window.Dispose() }
+
+  # Screenshot: the phone's PNG is stored byte for byte; output that is not a PNG is refused.
+  $shot=Join-Path $temp 'shot.png'; $bitmap=New-Object Drawing.Bitmap(4,4); $bitmap.Save($shot); $bitmap.Dispose()
+  [IO.File]::WriteAllText((Join-Path $temp 'shot.txt'),'error: device offline')
+  $fakeAdb=Join-Path $temp 'adb.cmd'
+  [IO.File]::WriteAllText($fakeAdb,"@powershell -NoProfile -Command `"`$b=[IO.File]::ReadAllBytes('%~dp0%MX_SHOT%'); [Console]::OpenStandardOutput().Write(`$b,0,`$b.Length)`"`r`n")
+  $realAdb=$env:ADB; $env:ADB=$fakeAdb
+  try {
+    $env:MX_SHOT='shot.png'; $saved=Save-Screenshot 'T'
+    try { Assert ((Get-FileHash $saved).Hash -eq (Get-FileHash $shot).Hash) 'screenshot stores the phone picture unchanged' } finally { Remove-Item -LiteralPath $saved }
+    $env:MX_SHOT='shot.txt'; $failed=$false; try { [void](Save-Screenshot 'T') } catch { $failed=$true }
+    Assert ($failed -and -not (Test-Path -LiteralPath $saved)) 'output that is not a PNG is refused and leaves no file'
+  } finally { $env:ADB=$realAdb; Remove-Item Env:MX_SHOT }
 
   # Picker search and input form.
   $items=@(@{Key='a';Label='Among Us';Detail='com.innersloth'},@{Key='y';Label='YouTube';Detail='com.google.youtube'},@{Key='s';Label='Settings';Detail='com.android.settings'})
@@ -146,6 +158,44 @@ try {
   Uninstall-Mirrodex $paths -Quiet
   for ($i=0; $i -lt 40 -and (Test-Path $paths.Dir); $i++) { Start-Sleep -Milliseconds 250 }
   Assert (-not (Test-Path $paths.Dir) -and -not (Test-Path (Join-Path $paths.Desktop 'Mirrodex.lnk')) -and -not (Test-Path $paths.StartMenu)) 'uninstall removes program folder and shortcuts'
+
+  # Every start asks the phone for its details once (listing encoders starts the engine on the phone) and hands that
+  # same answer to the session. Order: first start without settings, saved settings, tune, assistant.
+  $Root=$temp; $Cfg=Join-Path $temp 'mirrodex.cfg'; $Recovery=Join-Path $temp 'refresh-recovery.cfg'
+
+  # The encoder list is asked from the phone once per system build and Mirrodex version, then read from profiles\.
+  $script:build='samsung/x/x:16/AB1/1:user/release-keys'; $script:listed=0
+  function Invoke-Tool ($File,$Arguments,$Timeout) {
+    if ($Arguments -contains '--list-encoders') { $script:listed++; return @{Code=0;Text="INFO: -->   (usb)  SERIAL0001   device`n[server] INFO: List of video encoders:`n    --video-codec=h264 --video-encoder=vendor.avc (hw)`n    --audio-codec=opus --audio-encoder=c2.android.opus.encoder (sw)"} }
+    return @{Code=0;Text="Phone`nfp=$script:build`nPhysical size: 1080x2340"}
+  }
+  $first=Inspect-Device 'adb' 'engine' 'T'; $second=Inspect-Device 'adb' 'engine' 'T'
+  Assert ($script:listed -eq 1 -and (Get-Encoder $second.Encoders 'h264') -eq 'vendor.avc' -and $second.Long -eq 2340) 'the encoder list is asked once, then remembered'
+  $kept=Get-Content (Get-ChildItem (Join-Path $temp 'profiles') -Filter 'encoders-*.txt').FullName -Raw
+  Assert ($kept -match 'audio-encoder' -and $kept -notmatch 'SERIAL0001') 'only encoder lines are stored, never the serial number'
+  [void](Inspect-Device 'adb' 'engine' 'T' -Fresh)
+  Assert ($script:listed -eq 2) 'diagnostics and encoder recovery ask the phone again'
+  $script:build='samsung/x/x:17/CD2/2:user/release-keys'; [void](Inspect-Device 'adb' 'engine' 'T')
+  $version=$script:AppVersion; $script:AppVersion='0.0.0'; [void](Inspect-Device 'adb' 'engine' 'T'); $script:AppVersion=$version
+  Assert ($script:listed -eq 4) 'a system update or a new Mirrodex version asks again'
+  $script:build=''; [void](Inspect-Device 'adb' 'engine' 'T'); [void](Inspect-Device 'adb' 'engine' 'T')
+  Assert ($script:listed -eq 6) 'a phone that reports no build is asked every time'
+
+  function Invoke-StartupUpdateCheck { $false }
+  function Remove-LegacyAssistantShortcut { }
+  function New-DesktopShortcut { }
+  function Get-Scrcpy { Join-Path $temp 'engine\mirrodex-engine.exe' }
+  function Connect-Device ($Adb,$Preferred) { 'T' }
+  function Initialize-Context ($Adb,$Serial) { $script:Context=@{Key='k';Label='usb';Directory=(Join-Path $temp 'profiles\k')} }
+  function Inspect-Device ($Adb,$Scrcpy,$Serial) { $script:inspections++; @{Model='Phone';Long=2340;Short=1080;Encoders='--video-codec=h264 --video-encoder=vendor.avc (hw)'} }
+  function Invoke-Guide ($Scrcpy,$Adb,$Current,$Device,$Serial) { Get-QuickStartConfig $Device $Serial }
+  function Invoke-Tuning ($Scrcpy,$Adb,$Config,$Device,$Serial) { $Config }
+  function Start-ResilientMirror ($Scrcpy,$Adb,$Config,$Serial) { $script:sessionDevice=$script:PanelDevice; $script:sessionConfig=$Config }
+  foreach ($Mode in 'run','run','tune','guide') {
+    $script:inspections=0; $script:sessionDevice=$null
+    Main
+    Assert ($script:inspections -eq 1 -and $script:sessionDevice.Long -eq 2340 -and $script:sessionConfig.encoder -eq 'vendor.avc') "one device inspection per start, shared with the session ($Mode)"
+  }
   Write-Output "PASS: $script:checks feature checks ($($PSVersionTable.PSVersion))"
 } finally {
   Unlock-Devices

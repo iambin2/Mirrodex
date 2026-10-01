@@ -13,7 +13,7 @@ function Initialize-Context ($Adb, $Serial) {
   $screen=[Windows.Forms.Screen]::FromPoint([Windows.Forms.Cursor]::Position)
   $identity=Invoke-Tool $Adb @('-s',$Serial,'shell','getprop','ro.serialno')
   $id=if ($identity.Code -eq 0 -and $identity.Text.Trim()) { $identity.Text.Trim() } else { $Serial }
-  $transport=if ($Serial -match ':|_adb-tls-connect') { 'wireless' } else { 'usb' }
+  $transport=if (Test-WirelessSerial $Serial) { 'wireless' } else { 'usb' }
   $label="$transport / $($screen.Bounds.Width)x$($screen.Bounds.Height)"
   $hash=[Security.Cryptography.SHA256]::Create()
   try { $key=([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes("$env:COMPUTERNAME|$id|$transport|$($screen.DeviceName)|$($screen.Bounds)")))).Replace('-','').ToLowerInvariant() }
@@ -139,9 +139,9 @@ function Save-Screenshot ($Serial) {
     $p=[Diagnostics.Process]::Start($info)
     try {
       $file=[IO.File]::Create($path)
-      try { $p.StandardOutput.BaseStream.CopyTo($file) } finally { $file.Dispose() }
-      $bytes=[IO.File]::ReadAllBytes($path)
-      $ok=$p.WaitForExit(15000) -and $p.ExitCode -eq 0 -and $bytes.Length -gt 8 -and $bytes[0] -eq 0x89 -and $bytes[1] -eq 0x50
+      # The PNG signature is checked on the open file; the picture (several MB) is not read back.
+      try { $p.StandardOutput.BaseStream.CopyTo($file); $size=$file.Length; $file.Position=0; $png=($file.ReadByte() -eq 0x89 -and $file.ReadByte() -eq 0x50) } finally { $file.Dispose() }
+      $ok=$p.WaitForExit(15000) -and $p.ExitCode -eq 0 -and $size -gt 8 -and $png
     } finally { $p.Dispose() }
   } catch { $ok=$false }
   if (-not $ok) { Remove-Item -LiteralPath $path -ErrorAction SilentlyContinue; throw '스크린샷을 저장하지 못했습니다. 휴대폰 연결을 확인해 주십시오.' }
@@ -154,84 +154,65 @@ function New-RecordPath {
   return (Join-Path $dir ('Mirrodex-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'.mp4'))
 }
 
-function Initialize-WindowApi {
-  if ('MirrodexWindow' -as [type]) { return }
-  Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-public static class MirrodexWindow {
- [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left,Top,Right,Bottom; }
- [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out Rect r);
- [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out Rect r);
- [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern bool SetWindowText(IntPtr h,string s);
- [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
-}
-'@
-}
 function Invoke-MirrorProcess ($File, [string[]]$Arguments, [int]$TrialSeconds=0) {
   $script:MirrorBecameReady=$false
-  $info=New-Object Diagnostics.ProcessStartInfo
-  $info.FileName=$File
-  $info.Arguments=(@($Arguments | ForEach-Object { '"'+[regex]::Replace([regex]::Replace($_,'(\\*)"','$1$1\"'),'(\\+)$','$1$1')+'"' })) -join ' '
-  $info.UseShellExecute=$false; $info.CreateNoWindow=$true
-  $info.RedirectStandardOutput=$true; $info.RedirectStandardError=$true
-  $p=New-Object Diagnostics.Process; $p.StartInfo=$info; $started=$false
+  $p=New-ToolProcess $File $Arguments; $started=$false
   $form=$null; $panel=$null; $request=$null; $cancelled=$false; $timer=[Diagnostics.Stopwatch]::StartNew()
   try {
     if ($TrialSeconds -gt 0) {
-      Initialize-WindowApi
       $form=New-TrialForm $TrialSeconds
       $form.Show()
-    } elseif ($script:SidebarEnabled -and $script:ActiveConfig -and $script:PanelDevice) {
-      Initialize-WindowApi
-      $panel=New-Sidebar $script:ActiveConfig $script:PanelDevice
-      $area=[Windows.Forms.Screen]::FromPoint([Windows.Forms.Cursor]::Position).WorkingArea
-      $panel.Height=[Math]::Min($panel.Height,$area.Height-24)
-      $panel.Location=New-Object Drawing.Point(($area.Right-$panel.Width-12),($area.Top+12))
-      $panel.Show()
     }
     if (-not $p.Start()) { throw '미러링 프로그램을 실행하지 못했습니다.' }
     $started=$true
     $timer.Restart()
     $stdout=$p.StandardOutput.ReadToEndAsync(); $stderr=$p.StandardError.ReadToEndAsync()
+    # The picture comes first: the engine needs about 0.7 s to show the phone and the side menu about 1.6 s to build,
+    # so the menu is built while the engine starts and then appears beside the mirror without taking its keyboard.
+    # An engine that has already failed gets no menu at all.
+    if ($TrialSeconds -eq 0 -and $script:SidebarEnabled -and $script:ActiveConfig -and $script:PanelDevice) {
+      $panel=New-Sidebar $script:ActiveConfig $script:PanelDevice
+      $area=[Windows.Forms.Screen]::FromPoint([Windows.Forms.Cursor]::Position).WorkingArea
+      $panel.Height=[Math]::Min($panel.Height,$area.Height-24)
+      $panel.Location=New-Object Drawing.Point(($area.Right-$panel.Width-12),($area.Top+12))
+      if (-not $p.HasExited) { $panel.Show() }
+    }
+    # The side menu or the trial window, whichever accompanies this session; it waits beside the mirror and never
+    # covers the picture.
+    $window=if ($panel) { $panel } else { $form }
+    $handle=[IntPtr]::Zero; $r=New-Object MirrodexWindow+Rect; $c=New-Object MirrodexWindow+Rect
+    $stamp=''; $title=''; $titled=''; $remaining=''
     while (-not $p.WaitForExit(200)) {
-      if ($panel) {
-        [Windows.Forms.Application]::DoEvents()
-        if ($panel.Tag.Request) { $request=$panel.Tag.Request; break }
-        $p.Refresh(); $handle=$p.MainWindowHandle
-        if ($handle -and $handle -ne [IntPtr]::Zero) {
-          $panel.Tag.Ready=$true
-          Update-MirrorTopmost $handle
-          $script:MirrorBecameReady=$true
-          $r=New-Object MirrodexWindow+Rect; $c=New-Object MirrodexWindow+Rect
-          if ([MirrodexWindow]::GetWindowRect($handle,[ref]$r) -and [MirrodexWindow]::GetClientRect($handle,[ref]$c) -and $r.Left -gt -30000 -and $c.Right -gt 0) {
-            $script:TrialGeometry=@($r.Left,$r.Top,$c.Right,$c.Bottom)
-            Move-BesideMirror $panel $handle $r
-          }
-        }
-      }
+      if (-not $window) { continue }
+      [Windows.Forms.Application]::DoEvents()
+      if ($panel -and $panel.Tag.Request) { $request=$panel.Tag.Request; break }
       if ($form) {
-        [Windows.Forms.Application]::DoEvents()
         if (-not $form.Visible) { $cancelled=$true; break }
         $left=[Math]::Max(0,$TrialSeconds-[int]$timer.Elapsed.TotalSeconds)
-        $form.Text=T "Mirrodex · $script:TrialLabel · 약 $left 초"
+        # The countdown is worded once per second (or when the language changes), not on every pass.
+        $now="$left $(Get-UiLanguage)"
+        if ($stamp -ne $now) { $stamp=$now; $title=T "Mirrodex · $script:TrialLabel · 약 $left 초"; $remaining=T "약 $($left)초 남았습니다" }
+        $form.Text=$title
         if ($form.PSObject.Properties['MxTrack']) {
           $form.MxTrack.Remaining=[float][Math]::Max(0,1-$timer.Elapsed.TotalSeconds/$TrialSeconds)
-          $form.MxTrack.TimeText=T "약 $($left)초 남았습니다"; $form.MxTrack.AccessibleName=$form.MxTrack.TimeText; $form.MxTrack.Invalidate()
+          $form.MxTrack.TimeText=$remaining; $form.MxTrack.AccessibleName=$remaining; $form.MxTrack.Invalidate()
         }
-        $p.Refresh()
-        $handle=$p.MainWindowHandle
-        if ($handle -and $handle -ne [IntPtr]::Zero) {
-          [void][MirrodexWindow]::SetWindowText($handle,(T "Mirrodex · $script:TrialLabel · 약 $left 초"))
-          $r=New-Object MirrodexWindow+Rect; $c=New-Object MirrodexWindow+Rect
-          if ([MirrodexWindow]::GetWindowRect($handle,[ref]$r) -and [MirrodexWindow]::GetClientRect($handle,[ref]$c) -and $r.Left -gt -30000 -and $c.Right -gt 0) {
+      }
+      # Finding the mirror window walks the desktop's top-level windows (up to ~8 ms when it is not in front), so the
+      # handle is kept and looked up again only when it stops answering. A process that has just exited gives $null.
+      if ($handle -eq [IntPtr]::Zero) { $p.Refresh(); $handle=$p.MainWindowHandle; $titled=''; if (-not $handle) { $handle=[IntPtr]::Zero } }
+      if ($handle -ne [IntPtr]::Zero) {
+        if (-not [MirrodexWindow]::GetWindowRect($handle,[ref]$r)) { $handle=[IntPtr]::Zero }
+        else {
+          if ($panel) { $panel.Tag.Ready=$true; Update-MirrorTopmost $handle; $script:MirrorBecameReady=$true }
+          elseif ($titled -ne $title) { [void][MirrodexWindow]::SetWindowText($handle,$title); $titled=$title }
+          if ([MirrodexWindow]::GetClientRect($handle,[ref]$c) -and $r.Left -gt -30000 -and $c.Right -gt 0) {
             $script:TrialGeometry=@($r.Left,$r.Top,$c.Right,$c.Bottom)
-            # The trial window never covers the picture being judged: it waits beside the mirror, like the side menu.
-            Move-BesideMirror $form $handle $r
+            Move-BesideMirror $window $handle $r
           }
         }
-        if ($timer.Elapsed.TotalSeconds -gt ($TrialSeconds+20)) { throw '시험 실행 응답 시간이 초과됐습니다.' }
       }
+      if ($form -and $timer.Elapsed.TotalSeconds -gt ($TrialSeconds+20)) { throw '시험 실행 응답 시간이 초과됐습니다.' }
     }
     # A recording is only playable after scrcpy finalizes it, so allow a clean exit before killing.
     if (($cancelled -or $request) -and -not $p.HasExited) { [void]$p.CloseMainWindow(); if (-not $p.WaitForExit(10000)) { $p.Kill(); $p.WaitForExit() } }
@@ -295,7 +276,7 @@ function Start-ResilientMirror ($Scrcpy, $Adb, $Config, $Serial) {
       $rollback=$null
       $kind=$_.Exception.Data['Kind']; if (-not $kind) { $kind='unknown' }
       $alt=$null
-      if ($kind -eq 'encoder' -and -not $alternateUsed -and $attempt -lt 2) { $alt=Get-AlternativeEncoder $active (Inspect-Device $Adb $Scrcpy $Serial) }
+      if ($kind -eq 'encoder' -and -not $alternateUsed -and $attempt -lt 2) { $alt=Get-AlternativeEncoder $active (Inspect-Device $Adb $Scrcpy $Serial -Fresh) }
       $action=Get-RecoveryChoice $kind ([bool]$alt) ($attempt -lt 2) -CanGuide
       if ($action -eq 'export') { Show-Diagnostics $active; return }
       # The side menu is unreachable while mirroring cannot start, so the assistant is offered here instead.
