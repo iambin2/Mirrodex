@@ -275,9 +275,6 @@ $script:UiEnglish=@{
   'Mirrodex를 제거하시겠습니까?'='Remove Mirrodex?'
   '프로그램, 저장된 설정, 바로가기를 지웁니다. 녹화 파일과 스크린샷(동영상·사진 폴더의 Mirrodex)은 남습니다.'='Removes the program, its saved settings and shortcuts. Recordings and screenshots (Mirrodex in your Videos and Pictures folders) are kept.'
   '제거하기'='Remove'
-  '휴대폰 화면을 가장 쉽게 PC로 옮기기 위해 만들었습니다.'='Made to bring your phone screen to your PC as simply as possible.'
-  '로고를 다섯 번이나 눌러 주셔서 고맙습니다.'='Thanks for clicking the logo five times.'
-  'GitHub에서 보기'='View on GitHub'
   '업데이트 확인'='Check for updates'
   '업데이트를 확인하는 중입니다…'='Checking for updates…'
   '업데이트를 확인하지 못했습니다. 인터넷 연결을 확인해 주십시오.'='Could not check for updates. Check your internet connection.'
@@ -346,7 +343,6 @@ $script:UiPatterns=@(
   @('^앱 하나만 · (.+)$','One app only · {0}'),
   @('^(.+) · (.+)px · 최대 (.+)fps$','{0} · {1}px · up to {2}fps'),
   @('^설치 위치: (.+)$','Install location: {0}'),
-  @('^만든 사람 · (.+)$','Made by {0}'),
   @('^Mirrodex (.+) · 약 (.+) MB$','Mirrodex {0} · about {1} MB'),
   @('^Mirrodex (.+)을 설치할 수 있습니다\. 지금 버전은 (.+)입니다\.$','Mirrodex {0} is available. You have {1}.'),
   @('^최신 버전입니다\. 지금 버전: (.+)$','Mirrodex is up to date. Current version: {0}'),

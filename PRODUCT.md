@@ -61,7 +61,6 @@ recovery. All behavior, files and rules must be preserved by any redesign.
 
 - The logo (`assets/mirrodex-logo.png`, teal gear with yellow eyes) is kept as is. Interface colors are free (confirmed).
 - Voice: Korean formal 합쇼체; English sentence case. Errors say what happened and how to recover (existing DESIGN.md rule).
-- The logo easter egg (five quick clicks → creator card) stays.
 
 ## Evidence on Hand
 

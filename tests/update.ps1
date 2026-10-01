@@ -57,20 +57,6 @@ try {
   function Get-LatestRelease { return @{Version=[version]$script:AppVersion} }
   Assert ((Get-UpdateStatus).Tone -eq 'success') 'menu check confirms the latest version'
 
-  # Easter egg: five quick logo clicks.
-  $script:cards=0
-  function Show-CreatorCard { $script:cards++ }
-  $logo=New-Object Windows.Forms.PictureBox
-  1..4 | ForEach-Object { Register-LogoClick $logo }
-  Assert ($script:cards -eq 0) 'four clicks do nothing'
-  Register-LogoClick $logo
-  Assert ($script:cards -eq 1 -and $logo.MxClicks.Count -eq 0) 'the fifth quick click opens the creator card'
-  1..4 | ForEach-Object { Register-LogoClick $logo }
-  for ($i=0; $i -lt 4; $i++) { $logo.MxClicks[$i]=$logo.MxClicks[$i].AddSeconds(-5) }
-  Register-LogoClick $logo
-  Assert ($script:cards -eq 1) 'slow clicks never add up'
-  $logo.Dispose()
-
   # Release package: forward-slash paths, no personal data, matching checksum.
   $dist=Join-Path $temp 'dist'
   & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path (Split-Path $PSScriptRoot) 'tools\build-release.ps1') -OutDir $dist | Out-Null

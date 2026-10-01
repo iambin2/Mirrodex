@@ -1,6 +1,6 @@
 ﻿. (Join-Path $PSScriptRoot 'mirrodex-lang.ps1')
-# Product identity: version checked by updates and written to Settings > Apps, repository, creator card.
-$script:AppVersion='2.1.2';$script:UpdateRepo='iambin2/Mirrodex'; $script:Creator='iambin2'
+# Product identity: version checked by updates and written to Settings > Apps, repository, publisher.
+$script:AppVersion='2.1.3';$script:UpdateRepo='iambin2/Mirrodex'; $script:Creator='iambin2'
 # Mirrodex design system (rules: DESIGN.md). One idea runs through every window: a ruled record of what is showing
 # now, and "1 or 2?" comparisons that change one thing at a time. Everything is drawn over native WinForms controls
 # so Windows keyboard, focus, screen-reader, DPI and high-contrast behavior is kept.
@@ -880,8 +880,6 @@ function Add-BrandHeader ($Layout, $Caption='Mirrodex') {
   [void]$row.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('AutoSize')))
   $picture=New-UiLogo 26
   if ($picture) {
-    # Easter egg: five quick clicks on the logo open the creator card.
-    $picture.Add_Click({ Register-LogoClick $this })
     $picture.Anchor='Left'
     $row.Controls.Add($picture,0,0)
   }
@@ -914,22 +912,6 @@ function New-UiLogo ([int]$Size) {
   })
   $picture.Add_Disposed({ if ($this.Tag) { $this.Tag.Dispose() } })
   return $picture
-}
-function Register-LogoClick ($Picture) {
-  $now=[DateTime]::UtcNow
-  if (-not $Picture.PSObject.Properties['MxClicks']) { $Picture | Add-Member -NotePropertyName MxClicks -NotePropertyValue (New-Object 'Collections.Generic.List[datetime]') }
-  $Picture.MxClicks.Add($now)
-  [void]$Picture.MxClicks.RemoveAll([Predicate[datetime]]{ param($t) ($now-$t).TotalSeconds -gt 2 })
-  if ($Picture.MxClicks.Count -ge 5) { $Picture.MxClicks.Clear(); Show-CreatorCard }
-}
-function Show-CreatorCard {
-  $logo=New-UiLogo 96
-  $logo.Anchor='None'; $logo.Margin=New-UiPadding 0 $script:UiSpace.Gap 0 $script:UiSpace.Section
-  $content=@($logo)
-  try {
-    $pick=Show-GuideChoice "만든 사람 · $script:Creator" "Mirrodex $script:AppVersion`n휴대폰 화면을 가장 쉽게 PC로 옮기기 위해 만들었습니다.`n로고를 다섯 번이나 눌러 주셔서 고맙습니다." @(@{Key='github';Label='GitHub에서 보기'}) -Closable -Content $content
-    if ($pick -eq 'github') { Start-Process "https://github.com/$script:UpdateRepo" }
-  } catch [OperationCanceledException] { }
 }
 # The toggle names the language it switches to, each in its own script.
 function Get-LanguageToggleText { if ((Get-UiLanguage) -eq 'en') { '한국어' } else { 'English' } }
