@@ -1,6 +1,6 @@
 ﻿. (Join-Path $PSScriptRoot 'mirrodex-lang.ps1')
 # Product identity: version checked by updates and written to Settings > Apps, repository, creator card.
-$script:AppVersion='2.1.1'; $script:UpdateRepo='iambin2/Mirrodex'; $script:Creator='iambin2'
+$script:AppVersion='2.1.2';$script:UpdateRepo='iambin2/Mirrodex'; $script:Creator='iambin2'
 # Mirrodex design system (rules: DESIGN.md). One idea runs through every window: a ruled record of what is showing
 # now, and "1 or 2?" comparisons that change one thing at a time. Everything is drawn over native WinForms controls
 # so Windows keyboard, focus, screen-reader, DPI and high-contrast behavior is kept.
