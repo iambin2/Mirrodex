@@ -23,6 +23,11 @@ Two audiences, confirmed as equally important (2026-09-29):
 - **Streaming and recording** — people who share the phone screen in Discord or record it; they need the picture never to
   change unexpectedly while live, and need to know whether they are recording.
 
+Direction set by the user on 2026-10-01: specialize for **Pokémon Champions players** — people who play the Android
+version on the PC screen, stream it or record battles to review. A battle has a 45-second move timer, so nothing may
+reconnect mid-match; as of 2026-10 the game has no replay of its own. Mirrodex stays a mirror: it does not read the game
+screen or play for the user. Whether this audience replaces the two above or joins them was not decided.
+
 Feature frequency inside the side menu was not confirmed by the user. Working assumption from code and docs: recording,
 screenshot and "what to show" are frequent; the engine settings are occasional; assistant, wireless, another phone, help,
 update and diagnostics are rare.
@@ -53,7 +58,9 @@ that asks about symptoms (stutter, blur, delay) instead of numbers, and never sa
 Mirroring with saved settings; first-run quick start; environment profiles per phone/connection/PC/display; comparison
 assistant with known-good restore, undo, temporary use and diagnostics export; side menu: recording, screenshot, always on
 top, broadcast lock, what to show (whole screen / one app / front or back camera), engine settings (resolution, fps, bit rate,
-video buffer, audio buffer, codec, audio output, strict audio), apply/save/restore, wireless switch, pairing, another phone,
+video buffer, audio buffer, codec, audio output, strict audio), game options (open Pokémon Champions and start locked, keep
+the phone screen on, forward a PC controller), record from the start of every launch, match marks beside the recording,
+system-wide shortcuts for mark and screenshot (Alt+[ / Alt+], nothing reaches the game), apply/save/restore, wireless switch, pairing, another phone,
 Discord guide, diagnostics, update check; per-user install/uninstall; GitHub Releases updates with checksum; refresh-rate
 recovery. All behavior, files and rules must be preserved by any redesign.
 

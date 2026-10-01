@@ -1,6 +1,6 @@
 ﻿. (Join-Path $PSScriptRoot 'mirrodex-lang.ps1')
 # Product identity: version checked by updates and written to Settings > Apps, repository, publisher.
-$script:AppVersion='2.1.3';$script:UpdateRepo='iambin2/Mirrodex'; $script:Creator='iambin2'
+$script:AppVersion='2.2.0';$script:UpdateRepo='iambin2/Mirrodex'; $script:Creator='iambin2'
 # Mirrodex design system (rules: DESIGN.md). One idea runs through every window: a ruled record of what is showing
 # now, and "1 or 2?" comparisons that change one thing at a time. Everything is drawn over native WinForms controls
 # so Windows keyboard, focus, screen-reader, DPI and high-contrast behavior is kept.
@@ -126,7 +126,24 @@ public static class MirrodexWindow {
  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
 }
 // The side menu appears beside a mirror that is already on screen; it must not take the keyboard from it.
-public class MxQuietForm : Form { protected override bool ShowWithoutActivation { get { return true; } } }
+// It also owns the system-wide shortcuts (Alt+key), which work while the game in the mirror has the keyboard.
+// Alt alone, on purpose: left Alt is the engine's own shortcut modifier, the one key it never sends to the phone.
+// With Ctrl+Alt+key the engine would pass every Ctrl press on to the game in the middle of a battle.
+public class MxQuietForm : Form {
+ [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr h, int id, uint mods, uint key);
+ [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr h, int id);
+ readonly List<int> keys = new List<int>();
+ public event EventHandler HotKey;
+ public int HotKeyId;
+ protected override bool ShowWithoutActivation { get { return true; } }
+ // Alt+key without auto-repeat. False when another program (or another Mirrodex window) already has it.
+ public bool AddHotKey(int id, Keys key) { if (!RegisterHotKey(Handle, id, 0x4001, (uint)key)) return false; keys.Add(id); return true; }
+ protected override void WndProc(ref Message m) {
+  if (m.Msg == 0x0312 && HotKey != null) { HotKeyId = (int)m.WParam; HotKey(this, EventArgs.Empty); }
+  base.WndProc(ref m);
+ }
+ protected override void OnHandleDestroyed(EventArgs e) { foreach (int id in keys) UnregisterHotKey(Handle, id); keys.Clear(); base.OnHandleDestroyed(e); }
+}
 // Colors come from the PowerShell tokens once per process; controls only ask for names.
 // Crisp pixels: GDI+ puts pixel centers on whole coordinates. Outlines therefore sit on whole coordinates (odd
 // pens) or half coordinates (even pens), fills cover whole pixels and pen widths are whole pixels. A line drawn
@@ -204,6 +221,9 @@ public static class MxIcons {
      using (var p = MxTheme.Round(R(4, 1.5f, 8, 13), 2 * s)) g.DrawPath(pen, p);
      g.DrawLine(pen, P(7, 12), P(9, 12)); break;
     case "plus": g.DrawLine(pen, P(8, 3), P(8, 13)); g.DrawLine(pen, P(3, 8), P(13, 8)); break;
+    case "flag":
+     g.DrawLine(pen, P(4, 2), P(4, 14));
+     g.DrawLines(pen, new[] { P(4, 2.5f), P(12.5f, 2.5f), P(10.5f, 5.5f), P(12.5f, 8.5f), P(4, 8.5f) }); break;
     case "screen":
      using (var p = MxTheme.Round(R(1.5f, 2.5f, 13, 9), 1.5f * s)) g.DrawPath(pen, p);
      g.DrawLine(pen, P(5.5f, 14), P(10.5f, 14)); break;
@@ -952,10 +972,11 @@ function Get-SourceLabel ($Source) {
 }
 function Get-SourceIcon ($Source) { switch ($Source.Kind) { 'app' {'app'} 'camera' {'camera'} default {'screen'} } }
 # The settings every "saved / not saved" comparison looks at (serial and legacy arr are left out).
-$script:UiConfigKeys=@('codec','encoder','size','rate','buffer','fps','audio','audiobuffer','requireaudio')
+$script:UiConfigKeys=@('codec','encoder','size','rate','buffer','fps','audio','audiobuffer','requireaudio','game','screenon','gamepad')
 function Test-ConfigSaved ($Config) {
   try { if (-not (Test-Path -LiteralPath $Cfg)) { return $false }; $saved=Import-Config $Cfg } catch { return $false }
-  return -not @($script:UiConfigKeys | Where-Object { [string]$saved[$_] -ne [string]$Config[$_] }).Count
+  # A key the running settings never set (a fresh quick start) is at its default, which is what the file reads back.
+  return -not @($script:UiConfigKeys | Where-Object { $Config.ContainsKey($_) -and [string]$saved[$_] -ne [string]$Config[$_] }).Count
 }
 function New-Sidebar ($Config, $Device) {
   Add-Type -AssemblyName System.Windows.Forms
@@ -1023,19 +1044,25 @@ function New-Sidebar ($Config, $Device) {
 
   # Keys: toggles carry a lamp (filled when on); instant actions have none. The reconnect glyph marks interruptions.
   $keys=New-Object Windows.Forms.TableLayoutPanel
-  $keys.ColumnCount=2; $keys.RowCount=2; $keys.AutoSize=$true; $keys.Dock='Top'; $keys.Margin=New-UiPadding 0 0 0 $script:UiSpace.Group
+  # Three pairs: recording (now, and from the first frame of every start), capture (match mark, screenshot; both
+  # also on a system-wide shortcut), window (on top, lock).
+  $keys.ColumnCount=2; $keys.RowCount=3; $keys.AutoSize=$true; $keys.Dock='Top'; $keys.Margin=New-UiPadding 0 0 0 $script:UiSpace.Group
   foreach ($i in 1..2) { [void]$keys.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle('Percent',50))) }
   $state.Record=New-UiButton $(if ($script:Recording) {'녹화 중지 · 파일 저장'} else {'화면 녹화 시작 · 동영상 폴더'}) 'record' 'key' $(if ($script:Recording) {'stop'} else {'record'}) -Reconnects
   $state.Record.Lamp=if ($script:Recording) { 2 } else { 0 }
-  $state.Screenshot=New-UiButton '스크린샷 저장 · 사진 폴더' 'screenshot' 'key' 'camera'
+  $state.AutoRecord=New-UiToggle '시작할 때 녹화 · 다음 실행부터' ((Get-UiPreference 'autorecord' '0') -eq '1') 'record'
+  $state.AutoRecord.Add_CheckedChanged({ Set-UiPreference 'autorecord' ([int]$this.Checked) })
+  $state.Mark=New-UiButton '경기 표시 · Alt+[' 'mark' 'key' 'flag'
+  $state.Screenshot=New-UiButton '스크린샷 저장 · Alt+]' 'screenshot' 'key' 'camera'
   $state.OnTop=New-UiToggle '항상 위에 표시 · 미러링 창' ([bool]$script:AlwaysOnTop) 'pin'
   Set-UiAccessibleName $state.OnTop '미러링 창을 항상 위에 표시'
   $state.OnTop.Add_CheckedChanged({ Set-AlwaysOnTop $this.Checked; $this.FindForm().TopMost=$this.Checked })
-  $state.Lock=New-UiToggle '방송 중 · 재연결 잠금' $false 'lock'
-  $cells=@(@($state.Record,0,0),@($state.Screenshot,1,0),@($state.OnTop,0,1),@($state.Lock,1,1))
+  $locked=if ($null -eq $script:Locked) { $Config.game -eq '1' } else { $script:Locked }
+  $state.Lock=New-UiToggle '방송 중 · 재연결 잠금' ([bool]$locked) 'lock'
+  $cells=@(@($state.Record,0,0),@($state.AutoRecord,1,0),@($state.Mark,0,1),@($state.Screenshot,1,1),@($state.OnTop,0,2),@($state.Lock,1,2))
   foreach ($cell in $cells) {
     $key=$cell[0]; $key.Dock='Fill'
-    $key.Margin=New-UiPadding $(if ($cell[1]) {4} else {0}) 0 $(if ($cell[1]) {0} else {4}) $(if ($cell[2]) {0} else {$script:UiSpace.Gap})
+    $key.Margin=New-UiPadding $(if ($cell[1]) {4} else {0}) 0 $(if ($cell[1]) {0} else {4}) $(if ($cell[2] -eq 2) {0} else {$script:UiSpace.Gap})
     if ($key -is [MxButton]) { $key.Add_Click({ Invoke-SidebarAction $this }) }
     $keys.Controls.Add($key,$cell[1],$cell[2])
   }
@@ -1083,10 +1110,16 @@ function New-Sidebar ($Config, $Device) {
     $row.Controls.Add($label,0,0); $row.Controls.Add($combo,1,0); $settings.Controls.Add($row)
   }
   $state.Fields=$fields; $state.Initial=$initial
-  $state.Required=New-UiCheck '방송용 · 소리 연결 실패 시 알려주기' ($Config.requireaudio -eq '1')
-  $state.Required.Margin=New-UiPadding 0 6 0 0
-  $state.Required.Add_CheckedChanged({ $s=$this.FindForm().Tag; if ($s) { Update-SidebarDraft $s } })
-  $settings.Controls.Add($state.Required)
+  # Checks: applied and saved like the values above. The game check appears only when the phone has the game.
+  $state.Checks=@{}
+  foreach ($spec in @(@('requireaudio','방송용 · 소리 연결 실패 시 알려주기'),@('game','포켓몬 챔피언스 실행 · 잠근 채 시작'),@('screenon','휴대폰 화면 켜 두기'),@('gamepad','PC 컨트롤러를 휴대폰에 전달'))) {
+    if ($spec[0] -eq 'game' -and -not $Device.Game -and $Config.game -ne '1') { continue }
+    $check=New-UiCheck $spec[1] ($Config[$spec[0]] -eq '1')
+    $check.Margin=New-UiPadding 0 6 0 0
+    $check.Add_CheckedChanged({ $s=$this.FindForm().Tag; if ($s) { Update-SidebarDraft $s } })
+    $settings.Controls.Add($check); $state.Checks[$spec[0]]=$check
+  }
+  $state.Required=$state.Checks.requireaudio
   $state.Draft=New-UiText '' 'body' $inner; $state.Draft.Margin=New-UiPadding 0 $script:UiSpace.Gap 0 2
   $settings.Controls.Add($state.Draft)
   $note=New-UiText "적용하면 화면과 소리가 잠시 다시 연결되며 이번 실행에만 쓰입니다. 계속 쓰려면 저장하십시오.`nDiscord에서 공유 창을 다시 선택해야 할 수 있습니다." 'caption' $inner
@@ -1101,8 +1134,9 @@ function New-Sidebar ($Config, $Device) {
 
   $layout.Controls.Add((New-UiText '연결' 'section'))
   $connection=New-UiCard 0
-  if (-not (Test-WirelessSerial $Config.serial)) { $state.Wireless=Add-SidebarRow $connection '무선으로 전환 · 케이블 없이 사용' 'wireless' 'wifi' '' -Reconnects }
-  $state.AddDevice=Add-SidebarRow $connection '다른 휴대폰 추가 연결 · 새 창에서 연결합니다' 'adddevice' 'plus' 'chevron-right'
+  # One-line rows: the third row of keys took their second lines' height, so the folded menu still fits a 1200px screen at 125%.
+  if (-not (Test-WirelessSerial $Config.serial)) { $state.Wireless=Add-SidebarRow $connection '무선으로 전환' 'wireless' 'wifi' '' -Reconnects }
+  $state.AddDevice=Add-SidebarRow $connection '다른 휴대폰 추가 연결' 'adddevice' 'plus' 'chevron-right'
   $state.AddDevice.Divider=[bool]$state.Wireless
   $layout.Controls.Add($connection)
 
@@ -1124,7 +1158,8 @@ function New-Sidebar ($Config, $Device) {
   $closing.Glyph='info'
   $layout.Controls.Add($closing)
 
-  $state.Lock.Add_CheckedChanged({ Update-SidebarState $this.FindForm().Tag })
+  $state.Lock.Add_CheckedChanged({ $script:Locked=$this.Checked; Update-SidebarState $this.FindForm().Tag })
+  $form.Add_HotKey({ $s=$this.Tag; $key=if ($this.HotKeyId -eq 1) { $s.Screenshot } else { $s.Mark }; if ($key.Enabled) { Invoke-SidebarAction $key } })
   $form.Tag=$state
   Update-SidebarState $state
   # Recording time and a slow blink (off when Windows animation effects are off).
@@ -1135,13 +1170,19 @@ function New-Sidebar ($Config, $Device) {
     Update-SidebarClock $state; $script:SidebarClock.Start()
     $form.Add_Disposed({ if ($script:SidebarClock) { $script:SidebarClock.Dispose(); $script:SidebarClock=$null } })
   }
-  $form.Add_Shown({ Fit-Sidebar $this })
+  $form.Add_Shown({
+    # ponytail: the [ and ] keys of the US and Korean layouts; other layouts have other characters on these two
+    # keys while the labels still say [ and ]. Name the keys from the active layout if that ever matters.
+    $free=$this.AddHotKey(1,[Windows.Forms.Keys]::OemCloseBrackets); $free=$this.AddHotKey(2,[Windows.Forms.Keys]::OemOpenBrackets) -and $free
+    if (-not $free -and -not $this.Tag.Status.Visible) { Set-UiStatus $this.Tag.Status 'Alt+[, Alt+] 단축키를 다른 프로그램이 쓰고 있습니다. 이 창에서는 버튼으로 눌러 주십시오.' 'info' }
+    Fit-Sidebar $this
+  })
   Complete-UiForm $form
   $form.Add_FormClosing({ if ($_.CloseReason -eq [Windows.Forms.CloseReason]::UserClosing) { $_.Cancel=$true; $this.WindowState='Minimized' } })
   return $form
 }
 function Get-SidebarExpandText {
-  if ($script:SidebarExpanded) { '화면 설정 접기 · 바꾼 값은 적용하기 전까지 점선으로 표시됩니다' } else { '화면 설정 펼치기 · 선명도, 프레임, 전송량, 완충, 압축, 소리' }
+  if ($script:SidebarExpanded) { '화면 설정 접기 · 바꾼 값은 적용하기 전까지 점선으로 표시됩니다' } else { '화면 설정 펼치기 · 선명도, 프레임, 전송량, 소리, 게임 옵션' }
 }
 function Add-SidebarRow ($Card, [string]$Text, [string]$Key, [string]$Icon, [string]$Trail, [switch]$Reconnects) {
   $button=New-UiButton $Text $Key 'row' $Icon $Trail -Reconnects:$Reconnects
@@ -1178,9 +1219,11 @@ function Update-SidebarDraft ($State) {
     if ($combo.Changed -ne $changed) { $combo.Changed=$changed; $combo.Invalidate() }
     if ($changed) { $count++ }
   }
-  $required=($State.Required.Checked -ne ($State.Config.requireaudio -eq '1'))
-  if ($State.Required.Changed -ne $required) { $State.Required.Changed=$required; $State.Required.Invalidate() }
-  if ($required) { $count++ }
+  foreach ($key in $State.Checks.Keys) {
+    $check=$State.Checks[$key]; $changed=($check.Checked -ne ($State.Config[$key] -eq '1'))
+    if ($check.Changed -ne $changed) { $check.Changed=$changed; $check.Invalidate() }
+    if ($changed) { $count++ }
+  }
   $State.DraftCount=$count
   if ($count) {
     Set-UiText $State.Draft "적용하지 않은 값 $($count)개"; $State.Draft.Glyph='pencil'; $State.Draft.ForeColor=Get-UiColor 'Text'
@@ -1234,6 +1277,7 @@ function Invoke-SidebarAction ($Button) {
         }
       }
       'adddevice' { $message=Start-AdditionalDevice $s.Config.serial; Set-UiStatus $s.Status $message 'info' }
+      'mark' { $mark=Add-MatchMark; Set-UiStatus $s.Status "경기를 표시했습니다 · $($mark.Time)`n$($mark.Path)" 'success' $mark.Path }
       'screenshot' { Invoke-UiBusy $Button $s.Status '스크린샷을 저장하는 중입니다…' { $path=Save-Screenshot $s.Config.serial; Set-UiStatus $s.Status "스크린샷을 저장했습니다.`n$path" 'success' $path } }
       'save' { Save-Config $s.Config; Set-SidebarSaved $s $true; Set-UiStatus $s.Status '지금 실행 중인 설정을 저장했습니다. 아직 적용하지 않은 선택값은 저장하지 않습니다.' 'success' }
       'restore' { $candidate=Read-Profile 'good' $s.Config.serial; if (-not $candidate) { throw '저장된 정상 설정이 없습니다. 도우미에서 먼저 화면을 확인해 주십시오.' }; $s.Request=@{Kind='apply';Config=$candidate} }
@@ -1252,7 +1296,8 @@ function Get-SidebarConfig ($State) {
   $c=$State.Config.Clone()
   foreach ($key in $State.Fields.Keys) { $c[$key]=[string]$State.Fields[$key].SelectedItem }
   $c.audio=if ($c.audio -eq '노트북') {'output'} else {'off'}
-  $c.requireaudio=if ($State.Required.Checked -and $c.audio -eq 'output') {'1'} else {'0'}
+  foreach ($key in $State.Checks.Keys) { $c[$key]=[string][int]$State.Checks[$key].Checked }
+  if ($c.audio -ne 'output') { $c.requireaudio='0' }
   if ($c.codec -ne $State.Config.codec) {
     $c.encoder=Get-Encoder $State.Device.Encoders $c.codec
     if (-not $c.encoder) { throw '지원되는 인코더가 없습니다.' }

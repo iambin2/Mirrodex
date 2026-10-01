@@ -218,7 +218,7 @@ $script:UiEnglish=@{
   '보여줄 화면'='What to show'
   '보여줄 화면 바꾸기'='Change what to show'
   '연결'='Connection'
-  '무선으로 전환 · 케이블 없이 사용'='Switch to wireless · Unplug the cable'
+  '무선으로 전환'='Switch to wireless'
   '다른 휴대폰 추가 연결'='Connect another phone'
   '화면 설정 접기'='Hide screen settings'
   '화면 설정 펼치기'='Show screen settings'
@@ -300,14 +300,20 @@ $script:UiEnglish=@{
   '이번 실행에만 쓰는 설정'='This session only'
   '파일 위치 열기'='Open file location'
   '화면 녹화 시작 · 동영상 폴더'='Record screen · Videos folder'
-  '스크린샷 저장 · 사진 폴더'='Save screenshot · Pictures folder'
+  '스크린샷 저장 · Alt+]'='Save screenshot · Alt+]'
+  '시작할 때 녹화 · 다음 실행부터'='Record at start · From next launch'
+  '경기 표시 · Alt+['='Mark match · Alt+['
+  '녹화 중일 때만 경기를 표시할 수 있습니다. 먼저 화면 녹화를 시작하십시오.'='Matches can be marked only while recording. Start recording first.'
+  'Alt+[, Alt+] 단축키를 다른 프로그램이 쓰고 있습니다. 이 창에서는 버튼으로 눌러 주십시오.'='Another program is using Alt+[ or Alt+]. Use the buttons in this window instead.'
+  '포켓몬 챔피언스 실행 · 잠근 채 시작'='Open Pokémon Champions · Start locked'
+  '휴대폰 화면 켜 두기'='Keep the phone screen on'
+  'PC 컨트롤러를 휴대폰에 전달'='Send the PC controller to the phone'
   '항상 위에 표시 · 미러링 창'='Keep on top · Mirror window'
   '도우미로 화면 맞추기 · 불편한 점을 한 가지씩 비교합니다'='Tune with the assistant · Compares one discomfort at a time'
   '화면 설정 접기 · 바꾼 값은 적용하기 전까지 점선으로 표시됩니다'='Hide screen settings · Values not applied yet are dashed'
-  '화면 설정 펼치기 · 선명도, 프레임, 전송량, 완충, 압축, 소리'='Show screen settings · Resolution, fps, bit rate, buffer, codec, sound'
+  '화면 설정 펼치기 · 선명도, 프레임, 전송량, 소리, 게임 옵션'='Show screen settings · Resolution, fps, bit rate, sound, game options'
   '지금 실행 중인 값입니다.'='These are the running values.'
   '같은 설정으로 다시 연결'='Reconnect with the same settings'
-  '다른 휴대폰 추가 연결 · 새 창에서 연결합니다'='Connect another phone · Opens in a new window'
   '화면이 잠시 다시 연결되는 작업입니다. Discord에서는 공유 창을 다시 골라야 할 수 있습니다.'='Marks an action that briefly reconnects the screen. In Discord you may need to pick the shared window again.'
   '파일을 찾지 못했습니다. 옮기거나 지웠을 수 있습니다.'='The file was not found. It may have been moved or deleted.'
   '다른 선택'='Other options'
@@ -320,6 +326,7 @@ $script:UiPatterns=@(
   @('^(.+) · 케이블 연결$','{0} · Cable'),
   @('^(.+) · 무선 연결$','{0} · Wireless'),
   @('^녹화 중 (.+)$','Recording {0}'),
+  @('^경기를 표시했습니다 · (.+)$','Match marked · {0}'),
   @('^적용하지 않은 값 (.+)개$','{0} not applied yet'),
   @('^약 (.+)초 남았습니다$','About {0}s left'),
   @('^(.+): (.+) → (.+)$','{0}: {1} → {2}'),

@@ -7,6 +7,9 @@ $script:SidebarEnabled = $false
 $script:Recording = $false; $script:RecordFile = $null; $script:RecordStarted = $null; $script:LastRecording = $null; $script:SidebarExpanded = $false
 $script:Source = @{Kind='screen'}; $script:Notice = $null; $script:EnginePath = $null; $script:DeviceLocks = @{}
 $script:AlwaysOnTop = ((Get-UiPreference 'ontop' '0') -eq '1'); $script:TopHandle = [IntPtr]::Zero; $script:TopApplied = $null
+# Pokémon Champions on Android (Google Play id). $script:Locked: the reconnect lock as the user last left it in this
+# run; until they touch it, a session that opens the game starts locked.
+$script:GamePackage = 'jp.pokemon.pokemonchampions'; $script:Locked = $null
 
 function Initialize-Context ($Adb, $Serial) {
   Add-Type -AssemblyName System.Windows.Forms
@@ -87,7 +90,7 @@ function Export-Diagnostics ($Config) {
   $path=Join-Path $dir ('Mirrodex-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff')+'.txt')
   $lines=@('Mirrodex local diagnostics', ('time='+(Get-Date -Format o)), 'No screen, clipboard, raw log or device serial is collected.')
   if ($script:Context) { $lines+='environment='+$script:Context.Label }
-  foreach ($key in @('codec','encoder','size','rate','buffer','fps','arr','audio','audiobuffer','requireaudio')) { if ($Config) { $lines+="$key=$($Config[$key])" } }
+  foreach ($key in @('codec','encoder','size','rate','buffer','fps','arr','audio','audiobuffer','requireaudio','game','screenon','gamepad')) { if ($Config) { $lines+="$key=$($Config[$key])" } }
   if ($script:LastSession) { foreach ($key in @('Code','Kind','Samples','Min','Max','Skipped','VideoStarted')) { $lines+="$key=$($script:LastSession[$key])" } }
   $lines+='FPS is supporting evidence only. Static screens can report low FPS. Skipped counts are not network loss. No latency or end-to-end smoothness measurement.'
   [IO.File]::WriteAllLines($path,[string[]]$lines,[Text.Encoding]::UTF8)
@@ -152,6 +155,16 @@ function New-RecordPath {
   $dir=Join-Path ([Environment]::GetFolderPath('MyVideos')) 'Mirrodex'
   [void][IO.Directory]::CreateDirectory($dir)
   return (Join-Path $dir ('Mirrodex-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'.mp4'))
+}
+# A match mark: the elapsed recording time, one line per mark, in a text file beside the recording.
+# ponytail: counted from the engine's launch, so a mark reads about a second later than the video; write real MP4
+# chapters if marks ever need to be frame-exact.
+function Add-MatchMark {
+  if (-not ($script:Recording -and $script:RecordFile)) { throw '녹화 중일 때만 경기를 표시할 수 있습니다. 먼저 화면 녹화를 시작하십시오.' }
+  $path=[IO.Path]::ChangeExtension($script:RecordFile,'.marks.txt')
+  $time='{0:hh\:mm\:ss}' -f ([DateTime]::Now-$script:RecordStarted)
+  [IO.File]::AppendAllText($path,"$time`r`n")
+  return @{Time=$time; Path=$path}
 }
 
 function Invoke-MirrorProcess ($File, [string[]]$Arguments, [int]$TrialSeconds=0) {
@@ -288,16 +301,18 @@ function Start-ResilientMirror ($Scrcpy, $Adb, $Config, $Serial) {
 }
 
 # ---- What to show: whole screen, one app on its own virtual display, or a camera --------------------
-function Get-SourceOptions ($Source, [string[]]$Options) {
+function Get-SourceOptions ($Source, [string[]]$Options, $Config=$null) {
   switch ($Source.Kind) {
-    # A separate display shows only this app: notifications and other apps stay on the phone.
-    'app' { return @($Options) + @('--new-display', "--start-app=$($Source.Package)") }
+    # A separate display shows only this app: notifications and other apps stay on the phone. When that display
+    # closes (every reconnection), the app moves to the phone's own screen instead of being closed mid-battle.
+    'app' { return @($Options) + @('--new-display', '--no-vd-destroy-content', "--start-app=$($Source.Package)") }
     'camera' {
       # The phone screen stays on for the camera; audio switches to the microphone like a webcam.
       $camera=@($Options | Where-Object { $_ -notin @('--turn-screen-off','--stay-awake') } | ForEach-Object { if ($_ -eq '--audio-source=output') {'--audio-source=mic'} else {$_} })
       return $camera + @('--video-source=camera', "--camera-facing=$($Source.Facing)")
     }
-    default { return @($Options) }
+    # Whole screen with the game option: Pokémon Champions opens (or comes to the front) with the mirror.
+    default { if ($Config -and $Config.game -eq '1') { return @($Options) + "--start-app=$script:GamePackage" }; return @($Options) }
   }
 }
 function Get-DeviceApps ($Scrcpy, $Serial) {

@@ -20,7 +20,7 @@ try {
     $fs=$folded.Tag
     Assert (-not $fs.Settings.Visible -and $fs.Record.Visible -and $fs.Screenshot.Visible) "quick actions visible, engine settings folded by default ($lang)"
     Assert (-not $folded.MxLayout.Parent.VerticalScroll.Visible -and $folded.MxLayout.Bottom -le $folded.MxLayout.Parent.ClientSize.Height) "folded menu fits without scrolling ($lang)"
-    $cut=@(foreach ($key in @($fs.Record,$fs.Screenshot,$fs.OnTop,$fs.Lock)) {
+    $cut=@(foreach ($key in @($fs.Record,$fs.AutoRecord,$fs.Mark,$fs.Screenshot,$fs.OnTop,$fs.Lock)) {
       $room=$key.Width-$(if ($key -is [MxToggle] -or $key.Lamp -ge 0 -or $key.Reconnects) {66} else {50})*$px
       $parts=[MxPaint]::Split($key.Text)
       if ([MxTheme]::Width($g,$parts[0],$key.Font) -gt $room -or [MxTheme]::Width($g,$parts[1],$key.DetailFont) -gt $room) { $key.Text }
@@ -85,8 +85,26 @@ try {
   function Get-DeviceApps ($Scrcpy,$Serial) { $script:appsSerial=$Serial; @([pscustomobject]@{Label='Among Us';Package='com.x.among';System=$false},[pscustomobject]@{Label='YouTube';Package='com.google.youtube';System=$false}) }
   $state.Request=$null; $state.Source.PerformClick()
   Assert ($state.Request.Kind -eq 'source' -and $state.Request.Source.Package -eq 'com.google.youtube' -and $state.Request.Source.Label -eq 'YouTube' -and $script:appsSerial -eq 'TEST') 'one app only can be chosen from the side menu'
+  # Game options are picked, applied and saved like the other settings; record-at-start is remembered per PC.
+  Assert (-not $state.Checks.ContainsKey('game')) 'a phone without the game shows no game option'
+  $state.Request=$null; $state.Checks.screenon.Checked=$true; $state.Checks.gamepad.Checked=$true
+  $candidate=Get-SidebarConfig $state
+  Assert ($state.Checks.gamepad.Changed -and $candidate.screenon -eq '1' -and $candidate.gamepad -eq '1' -and -not $state.Request) 'game options are drafts until applied'
+  $state.Checks.screenon.Checked=$false; $state.Checks.gamepad.Checked=$false
+  $state.AutoRecord.Checked=$true; $script:UiPreferences=$null
+  Assert ((Get-UiPreference 'autorecord' '0') -eq '1' -and -not $state.Request) 'record at start is remembered for the next launch without reconnecting'
+  # A match mark: by its key or by Alt+[ (the window message the system sends for the shortcut).
+  $state.Mark.PerformClick()
+  Assert ($state.Status.Glyph -eq 'alert' -and -not $state.Request) 'marking without a recording explains itself'
+  $script:Recording=$true; $script:RecordFile=Join-Path $testRoot 'Mirrodex-1.mp4'; $script:RecordStarted=[DateTime]::Now
+  [void][MirrodexDwm]::SendMessage($form.Handle,0x0312,[IntPtr]2,$null)
+  Assert ((Test-Path (Join-Path $testRoot 'Mirrodex-1.marks.txt')) -and $state.Status.Glyph -eq 'check' -and $state.Status.MxOpen.Visible) 'the shortcut marks the match in the file beside the recording'
+  $script:Recording=$false; $script:RecordFile=$null
   $form.Close(); [Windows.Forms.Application]::DoEvents()
   Assert (-not $form.IsDisposed -and $form.WindowState -eq 'Minimized') 'sidebar X preserves video session and can reopen'
+  $script:Locked=$null; $champion=$c.Clone(); $champion.game='1'
+  $gamePanel=New-Sidebar $champion (@{Game=$true}+$device)
+  try { Assert ($gamePanel.Tag.Checks.game.Checked -and $gamePanel.Tag.Lock.Checked -and -not $gamePanel.Tag.Apply.Enabled) 'a session that opens the game starts with the reconnect lock on' } finally { $gamePanel.Dispose() }
   Assert ((Get-SessionKind 1 'Failed to initialize audio/opus') -eq 'audio') 'audio errors not mistaken for video codec errors'
   # Exercise orchestration: a user request restarts without saving, and startup failure rolls back.
   $script:launches=New-Object 'Collections.Generic.List[string]'

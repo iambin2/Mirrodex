@@ -70,7 +70,7 @@ try {
   Assert ((Connect-Device 'adb' '') -eq 'TEST456') 'explicit multi-device selection'
   $script:responses['devices|-l'] = @{Code=1;Text='error'}
   Assert-Throws { Get-Devices 'adb' } 'device listing failure'
-  $script:responses['-s|TEST123|shell|getprop ro.product.model; echo fp=$(getprop ro.build.fingerprint); wm size'] = @{Code=0;Text="SM-S948N`nfp=`nPhysical size: 1440x3120`nOverride size: 1080x2340"}
+  $script:responses['-s|TEST123|shell|getprop ro.product.model; echo fp=$(getprop ro.build.fingerprint); pm path jp.pokemon.pokemonchampions; wm size'] = @{Code=0;Text="SM-S948N`nfp=`nPhysical size: 1440x3120`nOverride size: 1080x2340"}
   $script:responses['--serial=TEST123|--list-encoders'] = @{Code=0;Text=$encoders}
   $device=Inspect-Device 'adb' 'scrcpy' 'TEST123'
   Assert ($device.Long -eq 2340 -and $device.Short -eq 1080) 'override resolution wins'

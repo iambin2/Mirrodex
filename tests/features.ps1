@@ -11,6 +11,7 @@ try {
   Assert ((@(Get-SourceOptions @{Kind='screen'} $base) -join ' ') -eq ($base -join ' ')) 'whole screen keeps options unchanged'
   $app=@(Get-SourceOptions @{Kind='app';Package='com.example.game'} $base)
   Assert ($app -contains '--new-display' -and $app -contains '--start-app=com.example.game' -and $app -contains '--turn-screen-off') 'one app runs on its own display'
+  Assert ($app -contains '--no-vd-destroy-content') 'a reconnection moves the app to the phone screen instead of closing it'
   $camera=@(Get-SourceOptions @{Kind='camera';Facing='front'} $base)
   Assert ($camera -contains '--video-source=camera' -and $camera -contains '--camera-facing=front' -and $camera -contains '--audio-source=mic') 'camera uses the phone camera and microphone'
   Assert ($camera -notcontains '--turn-screen-off' -and $camera -notcontains '--stay-awake' -and $camera -notcontains '--audio-source=output') 'camera drops options the engine rejects for it'
@@ -23,6 +24,34 @@ try {
   Start-Mirror 'engine' 'adb' $c 'T' 30
   Assert ($script:passed -notcontains '--new-display') 'comparison trials always use the whole screen'
   $script:Source=@{Kind='screen'}
+
+  # Game options: Pokémon Champions opens with a real session, the phone screen can stay on, a PC controller is forwarded.
+  $g=$c.Clone(); $g.game='1'; $g.screenon='1'; $g.gamepad='1'
+  Start-Mirror 'engine' 'adb' $g 'T'
+  Assert ($script:passed -contains '--start-app=jp.pokemon.pokemonchampions' -and $script:passed -contains '--gamepad=uhid' -and $script:passed -notcontains '--turn-screen-off' -and $script:passed -contains '--stay-awake') 'game options reach the engine'
+  Start-Mirror 'engine' 'adb' $g 'T' 30
+  Assert ($script:passed -notcontains '--start-app=jp.pokemon.pokemonchampions') 'comparison trials do not open the game'
+  Start-Mirror 'engine' 'adb' $c 'T'
+  Assert ($script:passed -contains '--turn-screen-off' -and -not @($script:passed | Where-Object { $_ -like '--start-app=*' -or $_ -like '--gamepad=*' }).Count) 'without the options the session is as before'
+  $cfgFile=Join-Path $temp 'game.cfg'
+  Write-Pairs $cfgFile $c; $read=Import-Config $cfgFile
+  Assert ($read.game -eq '0' -and $read.screenon -eq '0' -and $read.gamepad -eq '0') 'settings files from before the game options still load'
+  $g.game='2'; Write-Pairs $cfgFile $g; $failed=$false; try { [void](Import-Config $cfgFile) } catch { $failed=$true }
+  Assert $failed 'a game option that is not 0 or 1 is rejected'
+  $phone=@{Model='Phone';Long=2340;Short=1080;Encoders='--video-codec=h264 --video-encoder=vendor.avc (hw)'}
+  $plain=Get-QuickStartConfig $phone 'T'; $phone.Game=$true; $champion=Get-QuickStartConfig $phone 'T'
+  Assert ($plain.size -eq '1024' -and -not $plain.game -and $champion.size -eq '1920' -and $champion.game -eq '1') 'a phone with the game starts at 1920px with the game opened'
+  $phone.Long=1600; $phone.Encoders=''
+  Assert ((Get-QuickStartConfig $phone 'T').size -eq '800') 'without a confirmed encoder the cautious start stays'
+
+  # Match marks: elapsed recording time, one line each, beside the recording; refused when nothing is recording.
+  $script:Recording=$false; $failed=$false; try { [void](Add-MatchMark) } catch { $failed=$true }
+  Assert $failed 'a mark needs a recording'
+  $script:Recording=$true; $script:RecordFile=Join-Path $temp 'Mirrodex-1.mp4'; $script:RecordStarted=[DateTime]::Now.AddSeconds(-3725)
+  $mark=Add-MatchMark; [void](Add-MatchMark)
+  $marks=@([IO.File]::ReadAllLines((Join-Path $temp 'Mirrodex-1.marks.txt')))
+  Assert ($mark.Time -eq '01:02:05' -and $marks.Count -eq 2 -and $marks[0] -eq '01:02:05' -and $mark.Path -like '*Mirrodex-1.marks.txt') 'marks are written beside the recording as elapsed time'
+  $script:Recording=$false; $script:RecordFile=$null
 
   # App list parsing: user apps first, system apps after, each alphabetically.
   function Invoke-Tool ($File,$Arguments,$Timeout) { return @{Code=0;Text="[server] INFO: List of apps:`n - Settings                       com.android.settings`n * YouTube                        com.google.android.youtube`n * Among Us                       com.innersloth.spacemafia`nnoise line"} }
@@ -171,6 +200,10 @@ try {
   }
   $first=Inspect-Device 'adb' 'engine' 'T'; $second=Inspect-Device 'adb' 'engine' 'T'
   Assert ($script:listed -eq 1 -and (Get-Encoder $second.Encoders 'h264') -eq 'vendor.avc' -and $second.Long -eq 2340) 'the encoder list is asked once, then remembered'
+  $realTool=${function:Invoke-Tool}
+  function Invoke-Tool ($File,$Arguments,$Timeout) { $script:shell=$Arguments[-1]; return @{Code=0;Text="Phone`nfp=$script:build`npackage:/data/app/x/base.apk`nPhysical size: 1080x2340"} }
+  Assert ((Inspect-Device 'adb' 'engine' 'T').Game -and -not $second.Game -and $script:shell -like '*pm path jp.pokemon.pokemonchampions; wm size') 'the phone is asked whether the game is installed in the same call'
+  Set-Item function:Invoke-Tool $realTool
   $kept=Get-Content (Get-ChildItem (Join-Path $temp 'profiles') -Filter 'encoders-*.txt').FullName -Raw
   Assert ($kept -match 'audio-encoder' -and $kept -notmatch 'SERIAL0001') 'only encoder lines are stored, never the serial number'
   [void](Inspect-Device 'adb' 'engine' 'T' -Fresh)
@@ -190,12 +223,15 @@ try {
   function Inspect-Device ($Adb,$Scrcpy,$Serial) { $script:inspections++; @{Model='Phone';Long=2340;Short=1080;Encoders='--video-codec=h264 --video-encoder=vendor.avc (hw)'} }
   function Invoke-Guide ($Scrcpy,$Adb,$Current,$Device,$Serial) { Get-QuickStartConfig $Device $Serial }
   function Invoke-Tuning ($Scrcpy,$Adb,$Config,$Device,$Serial) { $Config }
-  function Start-ResilientMirror ($Scrcpy,$Adb,$Config,$Serial) { $script:sessionDevice=$script:PanelDevice; $script:sessionConfig=$Config }
+  function Start-ResilientMirror ($Scrcpy,$Adb,$Config,$Serial) { $script:sessionDevice=$script:PanelDevice; $script:sessionConfig=$Config; $script:sessionRecording=$script:Recording }
   foreach ($Mode in 'run','run','tune','guide') {
     $script:inspections=0; $script:sessionDevice=$null
     Main
     Assert ($script:inspections -eq 1 -and $script:sessionDevice.Long -eq 2340 -and $script:sessionConfig.encoder -eq 'vendor.avc') "one device inspection per start, shared with the session ($Mode)"
   }
+  Assert (-not $script:sessionRecording) 'a start does not record unless asked'
+  $Mode='run'; Set-UiPreference 'autorecord' 1; Main
+  Assert $script:sessionRecording 'record at start: the session records from its first frame'
   Write-Output "PASS: $script:checks feature checks ($($PSVersionTable.PSVersion))"
 } finally {
   Unlock-Devices

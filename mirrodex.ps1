@@ -91,8 +91,13 @@ function Import-Config ($Path = $Cfg) {
   if (-not $c.ContainsKey('audio')) { $c.audio = 'output' }
   if (-not $c.ContainsKey('audiobuffer')) { $c.audiobuffer = '50' }
   if (-not $c.ContainsKey('requireaudio')) { $c.requireaudio = '0' }
+  # Game options: open Pokémon Champions with the mirror, keep the phone's own screen on, forward a PC controller.
+  foreach ($key in @('game','screenon','gamepad')) {
+    if (-not $c.ContainsKey($key)) { $c[$key] = '0' }
+    if ($c[$key] -cnotmatch '^[01]$') { throw "잘못된 숫자 설정: $key" }
+  }
   foreach ($key in $c.Keys) {
-    if ($key -notin @('codec','encoder','size','rate','buffer','arr','fps','serial','audio','audiobuffer','requireaudio')) { throw "알 수 없는 설정: $key" }
+    if ($key -notin @('codec','encoder','size','rate','buffer','arr','fps','serial','audio','audiobuffer','requireaudio','game','screenon','gamepad')) { throw "알 수 없는 설정: $key" }
   }
   if ($c.codec -cnotmatch '^(h264|h265)$') { throw 'codec은 h264 또는 h265여야 합니다.' }
   if ($c.encoder -cnotmatch '^[A-Za-z0-9._-]*$') { throw '잘못된 인코더 이름입니다.' }
@@ -162,7 +167,8 @@ function Get-Encoder ($Text, $Codec) {
 # only with the phone's system software or the bundled engine, so its encoder lines are kept per build fingerprint
 # and Mirrodex version in profiles\. -Fresh asks the phone again: for diagnostics and after an encoder failed.
 function Inspect-Device ($Adb, $Scrcpy, $Serial, [switch]$Fresh) {
-  $result = Invoke-Tool $Adb @('-s',$Serial,'shell','getprop ro.product.model; echo fp=$(getprop ro.build.fingerprint); wm size')
+  # pm path prints a package: line only when Pokémon Champions is installed; wm size stays last so its exit code counts.
+  $result = Invoke-Tool $Adb @('-s',$Serial,'shell',('getprop ro.product.model; echo fp=$(getprop ro.build.fingerprint); pm path '+$script:GamePackage+'; wm size'))
   if ($result.Code -ne 0) { throw "기기 검사 실패: $($result.Text)" }
   $lines = $result.Text -split '\r?\n'
   $sizes = [regex]::Matches($result.Text, '(?:Physical|Override) size:\s*(\d+)x(\d+)')
@@ -188,7 +194,7 @@ function Inspect-Device ($Adb, $Scrcpy, $Serial, [switch]$Fresh) {
       } catch { }
     }
   }
-  return @{ Model=$lines[0]; Long=[Math]::Max($a,$b); Short=[Math]::Min($a,$b); Encoders=$list }
+  return @{ Model=$lines[0]; Long=[Math]::Max($a,$b); Short=[Math]::Min($a,$b); Encoders=$list; Game=($result.Text -match '(?m)^package:') }
 }
 
 function Get-StartingConfig ($Device, $Serial, $Environment) {
@@ -212,7 +218,11 @@ function Get-StartingConfig ($Device, $Serial, $Environment) {
 
 function Get-QuickStartConfig ($Device, $Serial) {
   $environment=if (Test-WirelessSerial $Serial) {'wireless'} else {'usb'}
-  return (Get-StartingConfig $Device $Serial $environment)
+  $c=Get-StartingConfig $Device $Serial $environment
+  # A phone with Pokémon Champions starts with the game opened and battle text sharp enough to read (1920px).
+  # A starting hypothesis like the others; without a confirmed hardware encoder the cautious values stay.
+  if ($Device.Game -and $c.encoder) { $c.game='1'; $c.size=[string][Math]::Min($Device.Long,1920) }
+  return $c
 }
 function Select-Preset ($Device, $Serial, $Current = $null) {
   Head "기기: $($Device.Model) / $($Device.Short) x $($Device.Long)"
@@ -343,10 +353,14 @@ function Get-MirrorOptions ($Config, $Serial) {
     "--max-size=$($Config.size)", "--max-fps=$($Config.fps)", "--video-bit-rate=$($Config.rate)",
     "--video-buffer=$($Config.buffer)")
   if ($Config.audio -eq 'off') { '--no-audio' } else { '--audio-source=output' }
-  @('--turn-screen-off', '--stay-awake', '--disable-screensaver')
+  # The phone's own screen stays on only when asked: playing by touch on the phone while the PC shows or streams it.
+  if ($Config.screenon -ne '1') { '--turn-screen-off' }
+  @('--stay-awake', '--disable-screensaver')
   if ($Config.audiobuffer -and $Config.audiobuffer -ne '50') { "--audio-buffer=$($Config.audiobuffer)" }
   if ($Config.requireaudio -eq '1' -and $Config.audio -ne 'off') { '--require-audio' }
   if ($Config.encoder) { "--video-encoder=$($Config.encoder)" }
+  # A controller plugged into the PC reaches the phone as its own gamepad while the mirror window is in front.
+  if ($Config.gamepad -eq '1') { '--gamepad=uhid' }
 }
 
 function Repair-RequestedRefresh ($Adb, $Serial) {
@@ -378,7 +392,7 @@ function Start-Mirror ($Scrcpy, $Adb, $Config, $Serial, [int]$TrialSeconds = 0) 
   # AAC keeps the MP4 audio playable in standard Windows players; Opus in MP4 is not.
   $script:RecordFile=$null
   # Sources (one app, camera) apply to real sessions only; comparisons always show the whole screen.
-  if ($TrialSeconds -eq 0) { $options=@(Get-SourceOptions $script:Source $options) }
+  if ($TrialSeconds -eq 0) { $options=@(Get-SourceOptions $script:Source $options $Config) }
   if ($TrialSeconds -eq 0 -and $script:Recording) {
     $script:RecordFile=New-RecordPath; $script:RecordStarted=[DateTime]::Now
     $options += @("--record=$script:RecordFile")
@@ -498,6 +512,8 @@ function Main {
     if ($config) {
       $script:PanelDevice=$device
       $script:SidebarEnabled=$true
+      # Recording from the first frame: starting it later reconnects, which a battle in progress cannot afford.
+      $script:Recording=((Get-UiPreference 'autorecord' '0') -eq '1')
       Start-ResilientMirror $scrcpy $adb $config $serial
     }
   } finally { Unlock-Devices }

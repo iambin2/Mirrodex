@@ -76,6 +76,7 @@ For experienced users
 Shortcuts
   Alt+F full screen / Alt+H home / Alt+B or Alt+Backspace back
   Alt+O turn phone screen off / Alt+Shift+O on / Alt+I show FPS
+  Alt+] save screenshot / Alt+[ mark match (left Alt; also work while another window is in front)
 
 Settings and restore
   mirrodex.cfg: saved settings. You do not need to edit it.
@@ -131,12 +132,12 @@ Side menu and Discord streaming
     connection, state chips (recording time, reconnection locked, 'Saved settings' or 'This session only'),
     and the result of your last action. After a screenshot, recording or troubleshooting file is saved,
     'Open file location' opens its folder.
-  · Four keys: screen recording, 'Save screenshot' (Pictures\Mirrodex, mirroring keeps running),
-    'Keep on top' and 'Live · Lock reconnects'. On/off keys show a small circle at the top right:
-    filled when on, hollow when off.
+  · Six keys: screen recording, 'Record at start', 'Mark match', 'Save screenshot' (Pictures\Mirrodex,
+    mirroring keeps running), 'Keep on top' and 'Live · Lock reconnects'. On/off keys show a small circle
+    at the top right: filled when on, hollow when off.
   · Screen: 'Tune with the assistant' opens the comparison assistant during mirroring, then mirroring
     continues. Screen settings are folded. Click 'Show screen settings' to choose
-    resolution, frame cap, bit rate, video/audio buffer, codec and sound output.
+    resolution, frame cap, bit rate, video/audio buffer, codec, sound output and the game options.
   · Connection: switch to wireless, connect another phone. Below: Discord guide, troubleshooting info, updates.
   Actions marked with ↻ briefly reconnect the screen.
   The screen keeps running while you choose values. Values chosen but not applied are dashed and counted.
@@ -154,7 +155,7 @@ Side menu and Discord streaming
 New features (2026-09-29)
   · Wireless: when the assistant says no phone is connected, click 'Connect wirelessly · No cable'
     and pair with the code under Wireless debugging (Android 11+).
-    If the phone is on a cable, click 'Switch to wireless · Unplug the cable' in the menu, then unplug it.
+    If the phone is on a cable, click 'Switch to wireless' in the menu, then unplug it.
   · What to show: 'Change' on the menu's Now card picks the whole phone screen, one app only,
     or the back/front camera. 'One app only' opens the app on a separate screen, so notifications and
     other apps never appear on stream (Android 10+). Camera mode uses the phone's microphone (Android 12+).
@@ -167,6 +168,34 @@ New features (2026-09-29)
     Settings, recordings and screenshots are kept. 'Check for updates' in the menu checks right away.
     Publishing a release (for the developer): RELEASING.md (Korean)
   Screen rules and the color, type and spacing system are in DESIGN.md (Korean).
+
+For Pokémon Champions battles (2026-10-01)
+  Mirrodex is an unofficial tool, not affiliated with Pokémon or Nintendo. It does not read the game
+  screen or play for you.
+  · Open the game with the mirror: when the phone has Pokémon Champions (Android), 'Show screen settings'
+    contains 'Open Pokémon Champions · Start locked'. Tick it, click 'Apply changes', then
+    'Save the running settings'. From then on, mirroring opens the game and starts with the reconnect
+    lock on. A phone connected for the first time that has the game starts with this option and 1920px.
+    Settings you already saved are not changed. To change settings, turn the lock off; once off, it stays
+    off for that run until you turn it on again.
+  · Record at start: when on, the next launch records from the first frame, so nothing reconnects
+    mid-battle to start a recording. At 8M this is about 3.6 GB per hour.
+  · Mark match (Alt+[): while recording, writes the elapsed recording time as one line in
+    Mirrodex-date-time.marks.txt beside the recording, to find matches in a long recording.
+    The time written is about one second after the real position in the video.
+  · Screenshot (Alt+]): for moments such as team preview, when there is no time to reach the menu.
+    Both shortcuts work while you are controlling the game and send no key to the game. Use the left
+    Alt key; [ and ] are the keys of the US and Korean layouts. If another program uses the same
+    shortcut, or two Mirrodex windows are open, the window opened later only has the buttons.
+  · Keep the phone screen on: for playing by touch on the phone while the PC only shows or streams it.
+  · Send the PC controller to the phone: a controller connected to the PC acts as the phone's controller
+    while the mirror window is in front. If the new settings cannot start, the previous ones return.
+  · While showing 'One app only', a reconnection moves the app to the phone's screen instead of closing it.
+  Confirmed on a real phone (SM-S948N, Android 16, game 1.2.1): the game runs with USB debugging on,
+  opening the game and starting locked, recording from the start with match marks, both shortcuts,
+  screenshots with the phone screen off and kept on, and the game continuing after a reconnection in
+  'One app only'. Not yet confirmed: playing the game with a real controller.
+  Using OBS and battle-log tools: BROADCAST.md (Korean).
 
 Language (English / 한국어)
   The default language is English. Switch instantly with the '한국어' / 'English' button
